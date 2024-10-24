@@ -1308,6 +1308,7 @@ void run_rethinkdb_porcelain(const base_path_t &base_path,
                              serve_info_t *serve_info,
                              directory_lock_t *data_directory_lock,
                              bool *const result_out) {
+    PageAllocator::initialize_pool(MAX_POOL_SIZE);
     if (!new_directory) {
         run_rethinkdb_serve(base_path, serve_info, initial_password, direct_io_mode,
                             max_concurrent_io_requests, total_cache_size,

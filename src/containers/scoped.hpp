@@ -10,6 +10,11 @@
 #include "errors.hpp"
 #include "memory_utils.hpp"
 
+#include "containers/memory_allocator.hpp"
+
+class PageAllocator;
+class MemoryPool;
+
 // Like boost::scoped_ptr only with release, init, no bool conversion, no boost headers!
 template <class T>
 class scoped_ptr_t {
@@ -365,7 +370,10 @@ TEMPLATE_ALIAS(scoped_page_aligned_ptr_t, scoped_alloc_t<T, raw_malloc_page_alig
 #endif
 
 // A type for device-block-aligned pointers
+// template <class T>
+// TEMPLATE_ALIAS(scoped_device_block_aligned_ptr_t, scoped_alloc_t<T, raw_malloc_aligned<DEVICE_BLOCK_SIZE>, raw_free_aligned>);
+
 template <class T>
-TEMPLATE_ALIAS(scoped_device_block_aligned_ptr_t, scoped_alloc_t<T, raw_malloc_aligned<DEVICE_BLOCK_SIZE>, raw_free_aligned>);
+TEMPLATE_ALIAS(scoped_device_block_aligned_ptr_t, scoped_alloc_t<T, PageAllocator::allocate, PageAllocator::deallocate>);
 
 #endif  // CONTAINERS_SCOPED_HPP_
