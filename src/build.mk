@@ -5,10 +5,20 @@
 # We assemble path directives.
 LDFLAGS ?=
 CXXFLAGS ?=
+
+RDMA_DIR := $(TOP)/RDMA
+RDMA_BUILD_DIR := $(RDMA_DIR)/release
+
+# Include the directories that contain the 'infinity' folder
+CXXFLAGS += -I$(RDMA_DIR)/src
+CXXFLAGS += -I$(RDMA_BUILD_DIR)/include
+
 RT_LDFLAGS = $(LDFLAGS) $(RE2_LIBS) $(TERMCAP_LIBS) $(QUICKJS_LIBS) $(CURL_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(Z_LIBS)
 RT_LDFLAGS += $(PROTOBUF_LIBS) $(PTHREAD_LIBS) $(MALLOC_LIBS)
 RT_CXXFLAGS := $(CXXFLAGS) $(RE2_INCLUDE) $(PROTOBUF_INCLUDE) $(BOOST_INCLUDE) $(QUICKJS_INCLUDE) $(CURL_INCLUDE) $(CRYPTO_INCLUDE) $(Z_INCLUDE)
 ALL_INCLUDE_DEPS := $(RE2_INCLUDE_DEP) $(PROTOBUF_INCLUDE_DEP) $(BOOST_INCLUDE_DEP) $(QUICKJS_INCLUDE_DEP) $(CURL_INCLUDE_DEP) $(SSL_INCLUDE_DEP) $(CRYPTO_INCLUDE_DEP) $(Z_INCLUDE_DEP)
+
+
 
 ifeq ($(USE_CCACHE),1)
   RT_CXX := ccache $(CXX)
@@ -79,7 +89,6 @@ ifeq ($(OS),FreeBSD)
   RT_LDFLAGS += -lexecinfo
 endif
 
-
 ifeq ($(STATICFORCE),1)
   # TODO(OSX)
   ifeq ($(OS),Linux)
@@ -117,8 +126,6 @@ ifeq ($(OS),Linux)
   RT_CXXFLAGS += -D_FILE_OFFSET_BITS=64
 endif
 
-
-
 ifneq (1,$(ALLOW_WARNINGS))
   RT_CXXFLAGS += -Werror
 endif
@@ -155,7 +162,6 @@ ifeq ($(COMPILER),INTEL)
   # TODO: get rid of the cause of this warning, not just the warning itself
   LD_OUTPUT_FILTER += 2> >(grep -v "warning: relocation refers to discarded section")
 endif
-
 
 ifeq ($(RT_FORCE_NATIVE),1)
   RT_CXXFLAGS+=-march=native
@@ -319,7 +325,7 @@ $(TOP)/src/rpc/semilattice/joins/macros.hpp $(TOP)/src/rpc/serialize_macros.hpp:
 generate-headers: $(TOP)/src/rpc/semilattice/joins/macros.hpp $(TOP)/src/rpc/serialize_macros.hpp
 
 .PHONY: rethinkdb
-rethinkdb: $(BUILD_DIR)/$(SERVER_EXEC_NAME)
+rethinkdb: rdma $(BUILD_DIR)/$(SERVER_EXEC_NAME)
 
 RETHINKDB_DEPENDENCIES_LIBS := $(MALLOC_LIBS_DEP) $(PROTOBUF_LIBS_DEP) $(RE2_LIBS_DEP) $(Z_LIBS_DEP) $(CURL_LIBS_DEP) $(CRYPTO_LIBS_DEP) $(SSL_LIBS_DEP) $(QUICKJS_LIBS_DEP)
 
@@ -343,7 +349,7 @@ endif
 
 $(BUILD_DIR)/$(SERVER_EXEC_NAME): $(SERVER_EXEC_OBJS) | $(BUILD_DIR)/. $(RETHINKDB_DEPENDENCIES_LIBS)
 	$P LD $@
-	$(RT_CXX) $(SERVER_EXEC_OBJS) $(RT_LDFLAGS) -o $(BUILD_DIR)/$(SERVER_EXEC_NAME) $(LD_OUTPUT_FILTER)
+	$(RT_CXX) $(SERVER_EXEC_OBJS) $(RT_LDFLAGS) -L$(RDMA_BUILD_DIR) -linfinity -o $(BUILD_DIR)/$(SERVER_EXEC_NAME) $(LD_OUTPUT_FILTER)
 	$(MAYBE_CHECK_STATIC_MALLOC)
 
 ifeq (1,$(SPLIT_SYMBOLS))
@@ -408,3 +414,10 @@ build-clean:
 .PHONY: check-syntax
 check-syntax:
 	$(RT_CXX) $(RT_CXXFLAGS) -c -o /dev/null $(patsubst %,$(CWD)/%,$(CHK_SOURCES))
+
+
+.PHONY: rdma
+rdma:
+	@mkdir -p $(RDMA_BUILD_DIR)
+	@cd $(RDMA_BUILD_DIR) && cmake $(RDMA_DIR)
+	@cd $(RDMA_BUILD_DIR) && make -j
