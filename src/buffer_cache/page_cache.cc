@@ -166,8 +166,26 @@ namespace alt
 
         buf_ptr_t buf(token->block_size(), std::move(ptr));
         current_pages_[block_id] = new current_page_t(block_id, std::move(buf), token, this);
-        uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(buf.ser_buffer());
-        page_map.add_to_map(block_id, page_offset_tmp);
+        page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
+
+        if (page_instance != nullptr)
+        {
+            void *page_buffer = page_instance->get_page_buf(this); // Use get_page_buf to access buffer
+
+            if (page_buffer != nullptr)
+            {
+                uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                page_map.add_to_map(block_id, page_offset_tmp);
+            }
+            else
+            {
+                std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
+            }
+        }
+        else
+        {
+            std::cerr << "Error: Page instance is null for block_id " << block_id << std::endl;
+        }
     }
 
     void page_cache_t::have_read_ahead_cb_destroyed()
@@ -463,8 +481,26 @@ namespace alt
             block_id, new current_page_t(block_id, std::move(buf), this)));
         guarantee(inserted_page.second);
 
-        uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(buf.ser_buffer());
-        page_map.add_to_map(block_id, page_offset_tmp);
+        page_t *page_instance = inserted_page.first->second->page_.get_page_for_read();
+
+        if (page_instance != nullptr)
+        {
+            void *page_buffer = page_instance->get_page_buf(this); // Use get_page_buf as specified
+
+            if (page_buffer != nullptr)
+            {
+                uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                page_map.add_to_map(block_id, page_offset_tmp);
+            }
+            else
+            {
+                std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
+            }
+        }
+        else
+        {
+            std::cerr << "Error: Page instance is null for block_id " << block_id << std::endl;
+        }
 
         misses_++;
 

@@ -9,7 +9,7 @@
 #include <cstddef>  // for size_t
 #include <unistd.h> // for sysconf
 
-#define PRINT_MAP_FREQ 10000 // Frequency of printing map contents
+#define PRINT_MAP_FREQ 100000 // Frequency of printing map contents
 typedef uint64_t block_id_t;
 
 class PageMap
@@ -45,7 +45,7 @@ public:
     }
 
     // Retrieve the offset for a given block_id
-    size_t get_offset(block_id_t block_id)
+    size_t get_offset_from_map(block_id_t block_id)
     {
         std::lock_guard<std::mutex> lock(map_mutex);
         if (block_offset_map.find(block_id) != block_offset_map.end())
