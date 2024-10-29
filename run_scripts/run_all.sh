@@ -11,7 +11,7 @@ CLIENTS=("10.10.1.1" "10.10.1.2" "10.10.1.3") # Add the actual client IPs here
 # CSV output file
 CSV_OUTPUT_FILE="performance_metrics.csv"
 
-RETHINK_BIN_PATH="/proj/rasl-PG0/kiran/rethink-source/rethinkdb/build/release/rethinkdb"
+RETHINK_BIN_PATH="/proj/rasl-PG0/kiran/rethink-source/RethinkDB/build/release/rethinkdb"
 
 # Initialize the CSV file with headers
 echo "Workload,Cache Size,Direct IO,Total Time Taken (seconds),Average Throughput (records/sec)" > $CSV_OUTPUT_FILE
