@@ -184,7 +184,7 @@ namespace alt
         }
         else
         {
-            std::cerr << "Error: Page instance is null for block_id " << block_id << std::endl;
+            std::cerr << "add_read_ahead_buf Error: Page instance is null for block_id " << block_id << std::endl;
         }
     }
 
@@ -260,6 +260,7 @@ namespace alt
           read_ahead_cb_(nullptr),
           drainer_(make_scoped<auto_drainer_t>())
     {
+        std::cout << "Page cache created \n max_block_size_ = " << max_block_size_.value() << std::endl;
         const bool start_read_ahead = balancer->read_ahead_ok_at_start();
         if (start_read_ahead)
         {
@@ -288,6 +289,8 @@ namespace alt
         // more likely to trip an assertion.
         evicter_.initialize(this, balancer, throttler);
         read_ahead_cb_ = local_read_ahead_cb;
+        operation_count = 0;
+        file_number = 0;
     }
 
     page_cache_t::~page_cache_t()
@@ -404,6 +407,20 @@ namespace alt
         txn->flush_complete_cond_.pulse();
     }
 
+    void page_cache_t::print_current_pages_to_file(size_t file_number)
+    {
+        std::stringstream ss;
+        ss << "current_pages_output" << file_number << ".txt";
+        std::string file_name = ss.str();
+        std::ofstream file;
+        file.open(file_name);
+        for (auto &&page : current_pages_)
+        {
+            file << page.first << std::endl;
+        }
+        file.close();
+    }
+
     current_page_t *page_cache_t::page_for_block_id(block_id_t block_id)
     {
         assert_thread();
@@ -418,11 +435,57 @@ namespace alt
                     block_id);
             page_it = current_pages_.insert(
                 page_it, std::make_pair(block_id, new current_page_t(block_id)));
+            page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
+
+            if (page_instance != nullptr)
+            {
+                void *page_buffer = page_instance->get_page_buf(this); // Use get_page_buf to access buffer
+
+                if (page_buffer != nullptr)
+                {
+                    uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                    page_map.add_to_map(block_id, page_offset_tmp);
+                }
+                else
+                {
+                    std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
+                }
+            }
+            else
+            {
+                std::cerr << " page_for_block_id Error: Page instance is null for block_id " << block_id << std::endl;
+            }
             misses_++;
         }
         else
         {
             rassert(!page_it->second->is_deleted());
+        }
+        operation_count.fetch_add(1);
+        {
+            std::lock_guard<std::mutex> lock(file_number_mutex);
+            if (operation_count.load() >= 1000000)
+            {
+                print_current_pages_to_file(page_map.file_number);
+                page_map.print_map_to_file(page_map.file_number);
+                // std::stringstream ts;
+                // ts << "dump" << std::this_thread::get_id() << ".txt";
+                // std::string file_name_t = ts.str();
+
+                // std::ofstream tfile(file_name_t, std::ios_base::app); // Append mode
+                // if (!tfile)
+                // {
+                //     std::cerr << "Failed to open file for writing." << std::endl;
+                //     // return;
+                // }
+
+                // tfile << "Current map contents:\n";
+                // int tmp = 0;
+                // tfile << PageAllocator::memory_pool->read_block(page_map.get_offset_from_map(100), 4096) << std::endl;
+                // PageAllocator::memory_pool->print_allocation_memory();
+                page_map.file_number++;
+                operation_count.store(0);
+            }
         }
 
         return page_it->second;
@@ -499,7 +562,7 @@ namespace alt
         }
         else
         {
-            std::cerr << "Error: Page instance is null for block_id " << block_id << std::endl;
+            std::cerr << "internal_page_for_new_chosen Error: Page instance is null for block_id " << block_id << std::endl;
         }
 
         misses_++;

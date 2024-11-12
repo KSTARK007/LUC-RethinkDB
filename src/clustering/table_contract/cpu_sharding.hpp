@@ -9,7 +9,7 @@
 class store_t;
 
 /* Changing this number would break backwards compatibility in the disk format. */
-#define CPU_SHARDING_FACTOR 8
+#define CPU_SHARDING_FACTOR 1
 
 /* `cpu_sharding_subspace()` returns a `region_t` that contains the full key-range space
 but only 1/CPU_SHARDING_FACTOR of the shard space. */
@@ -29,9 +29,10 @@ int get_cpu_shard_approx_number(const region_t &region);
 is that `get_cpu_sharded_store(i)->get_region() == cpu_sharding_subspace(i)`. The
 individual stores' home threads may be different from the `multistore_ptr_t`'s home
 thread. */
-class multistore_ptr_t : public home_thread_mixin_t {
+class multistore_ptr_t : public home_thread_mixin_t
+{
 public:
-    virtual ~multistore_ptr_t() { }
+    virtual ~multistore_ptr_t() {}
 
     virtual branch_history_manager_t *get_branch_history_manager() = 0;
 
@@ -44,4 +45,3 @@ public:
 };
 
 #endif /* CLUSTERING_TABLE_CONTRACT_CPU_SHARDING_HPP_ */
-

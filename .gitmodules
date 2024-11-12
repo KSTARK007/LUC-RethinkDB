@@ -1,3 +1,6 @@
 [submodule "RDMA"]
 	path = RDMA
 	url = https://github.com/dassl-uiuc/RDMA.git
+[submodule "third_party/json"]
+	path = third_party/json
+	url = https://github.com/nlohmann/json.git

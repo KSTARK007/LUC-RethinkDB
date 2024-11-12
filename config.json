@@ -1,0 +1,19 @@
+{
+    "hosts": [
+        {
+            "host": "10.10.1.1",
+            "Memory_port": 5000,
+            "metadata_port": 6001
+        },
+        {
+            "host": "10.10.1.2",
+            "Memory_port": 5000,
+            "metadata_port": 6001
+        },
+        {
+            "host": "10.10.1.3",
+            "Memory_port": 5000,
+            "metadata_port": 6001
+        }
+    ]
+}

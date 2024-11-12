@@ -8,17 +8,20 @@
 #include <infinity/infinity.h>
 #include <random>
 
-class RDMAConnection
+#define CLIENT_BUFFER_SIZE (64 * 1024) // 64 KB buffer size
+#define MAX_BLOCKS 100000
+
+class RDMAServer
 {
 public:
     // Constructor
-    RDMAConnection(const std::string &ip, uint64_t index, bool isLocal = false);
+    RDMAServer(const std::string &ip, uint64_t index, bool isLocal = false);
 
     // Destructor
-    ~RDMAConnection();
+    ~RDMAServer();
 
     // Initialize RDMA
-    void init(void *memory_region, uint64_t size, int server_port);
+    void init(void *memory_region, uint64_t size, int server_port, int expected_connections);
 
     // Static function to find NIC containing a specific string
     static std::string findNICContaining(const std::string &s);
@@ -41,4 +44,48 @@ private:
     infinity::memory::Buffer *buffer;
     bool isLocal;
     std::mutex rdma_mutex; // For thread safety if needed
+
+    std::vector<infinity::queues::QueuePair *> qp_list;
+};
+
+class RDMAClient
+{
+public:
+    RDMAClient(const std::string &ip, uint16_t port, bool isMetaData);
+    ~RDMAClient();
+
+    // Method to connect to the server
+    bool connectToServer();
+
+    // Simplified method to perform RDMA read with a fixed 64KB buffer
+    void performRDMARead(uint64_t total_buffer_size);
+
+    void readMetadata();
+
+    void print_client()
+    {
+        std::cout << "Client IP: " << ip << ", Port: " << port << ", Device hint: " << device_hint << ", Output file: " << output_file << std::endl;
+        std::cout << "Is metadata: " << isMetaData << std::endl;
+        std::cout << "Context: " << context << ", Queue pair: " << qp << ", Queue pair factory: " << qp_factory << ", Remote buffer token: " << remote_buffer_token << std::endl;
+        std::cout << "Page buffer: " << page_buffer << ", Request token: " << request_token << std::endl;
+        std::cout << "meta_data_buffer: " << meta_data_buffer << std::endl;
+    }
+
+private:
+    std::string ip;
+    uint16_t port;
+    std::string device_hint;
+    std::string output_file;
+    bool isMetaData;
+
+    // RDMA resources
+    infinity::core::Context *context;
+    infinity::queues::QueuePair *qp;
+    infinity::queues::QueuePairFactory *qp_factory;
+    infinity::memory::RegionToken *remote_buffer_token;
+
+    // Pre-allocated buffer and request token for RDMA read
+    infinity::memory::Buffer *page_buffer;
+    infinity::memory::Buffer *meta_data_buffer;
+    infinity::requests::RequestToken *request_token;
 };

@@ -391,6 +391,10 @@ namespace alt
 
         void have_read_ahead_cb_destroyed();
 
+        size_t file_number;
+        std::mutex file_number_mutex;
+        void print_current_pages_to_file(size_t file_number);
+
         evicter_t &evicter() { return evicter_; }
 
         auto_drainer_t::lock_t drainer_lock() { return drainer_->lock(); }
@@ -403,6 +407,8 @@ namespace alt
                                 const counted_t<standard_block_token_t> &token);
 
         void read_ahead_cb_is_destroyed();
+
+        std::atomic_uint64_t operation_count;
 
         current_page_t *internal_page_for_new_chosen(block_id_t block_id);
 

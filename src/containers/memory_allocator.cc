@@ -1,5 +1,8 @@
 #include "containers/memory_allocator.hpp"
 #include "containers/rdma.hpp"
+#include <thread>
+#include <chrono>
+#include <random>
 
 MemoryPool *PageAllocator::memory_pool = nullptr;
 
@@ -16,12 +19,46 @@ MemoryPool::MemoryPool(size_t pool_size, size_t alignment)
     else
     {
         pool_end = memory + pool_size;
+        mem_start = memory;
         free_list = nullptr;
         std::cout << "Aligned memory pool created with size: " << pool_size << " and alignment: " << alignment << std::endl;
     }
 
-    // Initialize RDMA connection
-    rdma_connection.init(memory, pool_size, SERVER_PORT);
+    configs = new ConfigParser("config.json");
+    configs->print_hosts();
+    int expected_connections = configs->get_hosts().size();
+
+    std::thread server_thread([this, pool_size, expected_connections]()
+                              { rdma_connection.init(memory, pool_size, SERVER_PORT_MAIN_CACHE, expected_connections); });
+    server_thread.detach();
+
+    for (const auto &host_info : configs->get_hosts())
+    {
+        // std::uniform_int_distribution<int> dist2(20, 50);
+        // int sleep_time2 = dist2(rng);
+        // std::cout << "Sleeping for " << sleep_time2 << " seconds before connecting to the next remote pool." << std::endl;
+        // std::this_thread::sleep_for(std::chrono::seconds(sleep_time2));
+
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        const std::string &host_ip = host_info.host;
+        int memory_port = host_info.memory_port;
+
+        // Connect to the remote memory pool
+        RDMAClient *client = new RDMAClient(host_ip, memory_port, false);
+        if (client->connectToServer())
+        {
+            std::cout << "[before RemoteMemoryPool] Connected to remote memory pool at IP: " << host_ip << ", port: " << memory_port << std::endl;
+            client->print_client();
+            RemoteMemoryPool.push_back(client);
+            std::cout << "Connected to remote memory pool at IP: " << host_ip << ", port: " << memory_port << std::endl;
+        }
+        else
+        {
+            std::cerr << "Failed to connect to remote memory pool at IP: " << host_ip << ", port: " << memory_port << std::endl;
+        }
+    }
+    // server_thread.join();
 }
 
 // Destructor
@@ -46,7 +83,7 @@ void *MemoryPool::allocate(size_t size)
     }
 
     memory = aligned_memory + size; // Move the pointer forward
-    std::cout << "Allocated " << size << " bytes from aligned memory pool at address " << static_cast<void *>(aligned_memory) << std::endl;
+    // std::cout << "Allocated " << size << " bytes from aligned memory pool at address " << static_cast<void *>(aligned_memory) << std::endl;
     return aligned_memory;
 }
 
@@ -64,20 +101,20 @@ void MemoryPool::deallocate(void *ptr)
 uint64_t MemoryPool::get_offset(void *ptr)
 {
     std::cout << "Getting offset for memory at address " << ptr << std::endl;
-    return static_cast<uint64_t>(static_cast<char *>(ptr) - memory);
+    return static_cast<uint64_t>(static_cast<char *>(ptr) - mem_start);
 }
 
 // Read and print the content of a block given an offset and size
-void MemoryPool::read_block(uint64_t offset, size_t size)
+char *MemoryPool::read_block(uint64_t offset, size_t size)
 {
     std::lock_guard<std::mutex> lock(pool_mutex); // Ensure thread-safe access
-    if (offset + size > static_cast<size_t>(pool_end - memory))
+    if (offset + size > static_cast<size_t>(pool_end - mem_start))
     {
         std::cerr << "Invalid read: Out of bounds for offset " << offset << " with size " << size << std::endl;
-        return;
+        return nullptr;
     }
 
-    char *block_start = memory + offset;
+    char *block_start = mem_start + offset;
     std::cout << "Reading block at offset " << offset << " with size " << size << " bytes:" << std::endl;
     for (size_t i = 0; i < size; ++i)
     {
@@ -88,6 +125,7 @@ void MemoryPool::read_block(uint64_t offset, size_t size)
         }
     }
     std::cout << std::dec << std::endl; // Reset to decimal format
+    return block_start;
 }
 
 // Print the content of a block given a pointer and size
@@ -106,6 +144,21 @@ void MemoryPool::print_block_content(void *ptr, size_t size)
         }
     }
     std::cout << std::dec << std::endl; // Reset to decimal format
+}
+
+void MemoryPool::print_allocation_memory()
+{
+    std::ofstream file;
+    file.open("memory_pool_allocation.txt");
+    for (size_t i = 0; i < MAX_POOL_SIZE; ++i)
+    {
+        file << std::hex << std::setw(2) << std::setfill('0') << (static_cast<int>(mem_start[i]) & 0xff) << " ";
+        if ((i + 1) % 16 == 0) // New line every 16 bytes for readability
+        {
+            file << std::endl;
+        }
+    }
+    file.close();
 }
 
 void MemoryPool::populate_block()

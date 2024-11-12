@@ -10,7 +10,7 @@
 #include <random>
 
 #define MAX_POOL_SIZE (uint64_t)(10) * 1024 * 1024 * 1024 // 10 GB
-#define SERVER_PORT 5000
+#define SERVER_PORT_MAIN_CACHE 5000
 
 typedef uint64_t block_id_t;
 
@@ -28,11 +28,17 @@ public:
 
     uint64_t get_offset(void *ptr);
 
-    void read_block(uint64_t offset, size_t size);
+    char *read_block(uint64_t offset, size_t size);
 
     void print_block_content(void *ptr, size_t size);
 
     void populate_block();
+
+    void connect_to_remote_memory_pools();
+
+    void connect_to_remote_metadata();
+
+    void print_allocation_memory();
 
 private:
     struct FreeBlock
@@ -41,10 +47,17 @@ private:
     };
 
     char *memory;          // Start of the memory pool
+    char *mem_start;       // Start of the memory pool
     char *pool_end;        // End of the memory pool
     FreeBlock *free_list;  // Linked list of free blocks
     std::mutex pool_mutex; // Mutex for thread-safe operations
-    RDMAConnection rdma_connection;
+    RDMAServer rdma_connection;
+    std::vector<RDMAClient *> RemoteMemoryPool;
+    std::vector<RDMAClient *> RemoteMetadata;
+
+    std::atomic<bool> server_ready;
+
+    ConfigParser *configs;
 };
 
 class PageAllocator

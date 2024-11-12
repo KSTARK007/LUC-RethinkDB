@@ -1,85 +1,111 @@
 #pragma once
 
 #include <cstdlib>
-#include <unordered_map>
 #include <fstream>
 #include <iostream>
 #include <cstring>
 #include <mutex>
+#include <sstream>
 #include <cstddef>  // for size_t
 #include <unistd.h> // for sysconf
+#include <thread>
+#include <containers/rdma.hpp>
+#include <containers/json_traversal.hpp>
 
-#define PRINT_MAP_FREQ 100000 // Frequency of printing map contents
+#define PRINT_MAP_FREQ 10000 // Frequency of printing map contents
+// #define MAX_METADATA_SIZE (uint64_t)(100) * 1024 * 1024 // 100 MB
+#define MAX_BLOCKS 100000 // Fixed array size for block offset map
+#define ALIGNMENT 64      // Alignment boundary for memory allocation
+
 typedef uint64_t block_id_t;
 
 class PageMap
 {
 public:
-    explicit PageMap() : operation_count(0), print_frequency(PRINT_MAP_FREQ) {}
+    explicit PageMap()
+        : file_number(0),
+          rdma_connection("10.10.1.1", 0, true),
+          print_frequency(PRINT_MAP_FREQ),
+          block_offset_map(nullptr)
+    {
+        // Allocate aligned memory for the block_offset_map array
+        if (posix_memalign(reinterpret_cast<void **>(&block_offset_map), ALIGNMENT, MAX_BLOCKS * sizeof(size_t)) != 0)
+        {
+            std::cerr << "Memory allocation failed for block_offset_map." << std::endl;
+            std::exit(EXIT_FAILURE); // Exit if memory allocation fails
+        }
+
+        // Initialize the array to an invalid offset to indicate unused entries
+        std::fill_n(block_offset_map, MAX_BLOCKS, static_cast<size_t>(-1));
+
+        // Use and increment the current_port for each instance
+        SERVER_PORT_METADATA = current_port++;
+
+        // Initialize the RDMA connection with the updated port
+        // rdma_connection.init(block_offset_map, MAX_BLOCKS * sizeof(size_t), SERVER_PORT_METADATA);
+    }
+
+    ~PageMap()
+    {
+        // Free the allocated memory
+        if (block_offset_map != nullptr)
+        {
+            free(block_offset_map);
+        }
+    }
 
     // Add an entry to the map
     void add_to_map(block_id_t block_id, size_t offset)
     {
         std::lock_guard<std::mutex> lock(map_mutex);
-        block_offset_map[block_id] = offset;
-        std::cout << "Added block_id " << block_id << " with offset " << offset << " to the map." << std::endl;
-
-        increment_operation_count();
+        if (block_id < MAX_BLOCKS)
+        {
+            block_offset_map[block_id] = offset;
+            std::cout << "Added block_id " << block_id << " with offset " << offset << " to the map." << std::endl;
+        }
+        else
+        {
+            std::cerr << "block_id " << block_id << " is out of bounds." << std::endl;
+        }
     }
 
     // Remove an entry from the map
     void remove_from_map(block_id_t block_id)
     {
         std::lock_guard<std::mutex> lock(map_mutex);
-        if (block_offset_map.find(block_id) != block_offset_map.end())
+        if (block_id < MAX_BLOCKS && block_offset_map[block_id] != static_cast<size_t>(-1))
         {
-            block_offset_map.erase(block_id);
+            block_offset_map[block_id] = static_cast<size_t>(-1); // Reset to invalid offset
             std::cout << "Removed block_id " << block_id << " from the map." << std::endl;
         }
         else
         {
             std::cerr << "block_id " << block_id << " not found in the map." << std::endl;
         }
-
-        increment_operation_count();
     }
 
     // Retrieve the offset for a given block_id
     size_t get_offset_from_map(block_id_t block_id)
     {
         std::lock_guard<std::mutex> lock(map_mutex);
-        if (block_offset_map.find(block_id) != block_offset_map.end())
+        if (block_id < MAX_BLOCKS && block_offset_map[block_id] != static_cast<size_t>(-1))
         {
             return block_offset_map[block_id];
         }
         else
         {
             std::cerr << "block_id " << block_id << " not found in the map." << std::endl;
-            return static_cast<size_t>(-1); // Use static_cast to avoid warnings
+            return static_cast<size_t>(-1); // Return an invalid offset
         }
     }
 
-private:
-    std::unordered_map<block_id_t, size_t> block_offset_map; // Map of block_id -> offset
-    std::mutex map_mutex;                                    // Protects access to the map
-    size_t operation_count;                                  // Tracks the number of operations
-    const size_t print_frequency;                            // Frequency of printing map contents
-
-    // Increment the operation count and print map if the count reaches the print frequency
-    void increment_operation_count()
+    void print_map_to_file(size_t file_number)
     {
-        operation_count++;
-        if (operation_count >= print_frequency)
-        {
-            print_map_to_file();
-            operation_count = 0; // Reset the count after printing
-        }
-    }
-
-    // Print the map contents to a file
-    void print_map_to_file()
-    {
-        std::ofstream outfile("page_map_output.txt", std::ios_base::app); // Append mode
+        std::lock_guard<std::mutex> lock(map_mutex);
+        std::stringstream ss;
+        ss << "page_map_output" << file_number << ".txt";
+        std::string file_name = ss.str();
+        std::ofstream outfile(file_name, std::ios_base::app); // Append mode
         if (!outfile)
         {
             std::cerr << "Failed to open file for writing." << std::endl;
@@ -87,12 +113,25 @@ private:
         }
 
         outfile << "Current map contents:\n";
-        for (const auto &entry : block_offset_map)
+        for (block_id_t i = 0; i < MAX_BLOCKS; ++i)
         {
-            outfile << "block_id: " << entry.first << ", offset: " << entry.second << "\n";
+            if (block_offset_map[i] != static_cast<size_t>(-1))
+            {
+                outfile << "block_id: " << i << ", offset: " << block_offset_map[i] << "\n";
+            }
         }
         outfile << "--------------------------\n";
         outfile.close();
         std::cout << "Map contents written to file." << std::endl;
     }
+
+    size_t file_number;
+    RDMAServer rdma_connection;
+    int SERVER_PORT_METADATA; // Instance-specific port number
+
+private:
+    size_t *block_offset_map;     // Pointer to aligned array for block_id -> offset
+    std::mutex map_mutex;         // Protects access to the map
+    const size_t print_frequency; // Frequency of printing map contents
+    static int current_port;      // Static variable to track the current port number across instances
 };
