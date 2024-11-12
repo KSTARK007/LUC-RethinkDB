@@ -39,10 +39,40 @@ public:
         std::fill_n(block_offset_map, MAX_BLOCKS, static_cast<size_t>(-1));
 
         // Use and increment the current_port for each instance
-        SERVER_PORT_METADATA = current_port++;
+        port_number = current_port++;
 
         // Initialize the RDMA connection with the updated port
-        // rdma_connection.init(block_offset_map, MAX_BLOCKS * sizeof(size_t), SERVER_PORT_METADATA);
+        if (port_number == 6001)
+        {
+            std::cout << "Initializing RDMA server on port " << port_number << std::endl;
+            // std::cout << "Initializing RDMA server on port " << port_number << std::endl;
+            // int pool_size = MAX_BLOCKS * sizeof(size_t);
+            // int expected_connections = PageAllocator::memory_pool->configs->get_hosts().size();
+            // std::thread server_thread([this, pool_size, expected_connections]()
+            //                           { rdma_connection.init(block_offset_map, pool_size, port_number, expected_connections); });
+            // server_thread.detach();
+
+            // std::cout << "Remote Clients for Meta Data connection." << std::endl;
+            // for (const auto &host_info : PageAllocator::memory_pool->configs->get_hosts())
+            // {
+            //     std::this_thread::sleep_for(std::chrono::seconds(5));
+            //     const std::string &host_ip = host_info.host;
+            //     int metadata_port = host_info.metadata_port;
+
+            //     // Connect to the remote metadata server
+            //     RDMAClient *client = new RDMAClient(host_ip, metadata_port, true);
+            //     if (client->connectToServer())
+            //     {
+            //         std::cout << "Connected to remote metadata server at IP: " << host_ip << ", port: " << metadata_port << std::endl;
+            //         client->print_client();
+            //         PageAllocator::memory_pool->RemoteMetadata.push_back(client);
+            //     }
+            //     else
+            //     {
+            //         std::cerr << "Failed to connect to remote metadata server at IP: " << host_ip << ", port: " << metadata_port << std::endl;
+            //     }
+            // }
+        }
     }
 
     ~PageMap()
@@ -127,9 +157,8 @@ public:
 
     size_t file_number;
     RDMAServer rdma_connection;
-    int SERVER_PORT_METADATA; // Instance-specific port number
+    int port_number; // Instance-specific port number
 
-private:
     size_t *block_offset_map;     // Pointer to aligned array for block_id -> offset
     std::mutex map_mutex;         // Protects access to the map
     const size_t print_frequency; // Frequency of printing map contents

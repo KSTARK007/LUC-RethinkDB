@@ -291,6 +291,37 @@ namespace alt
         read_ahead_cb_ = local_read_ahead_cb;
         operation_count = 0;
         file_number = 0;
+        if (page_map.port_number == 6001)
+        {
+            std::cout << "Initializing RDMA server on port " << page_map.port_number << std::endl;
+            std::cout << "Initializing RDMA server on port " << page_map.port_number << std::endl;
+            int pool_size = MAX_BLOCKS * sizeof(size_t);
+            int expected_connections = PageAllocator::memory_pool->configs->get_hosts().size();
+            std::thread server_thread([this, pool_size, expected_connections]()
+                                      { page_map.rdma_connection.init(page_map.block_offset_map, pool_size, page_map.port_number, expected_connections); });
+            server_thread.detach();
+
+            std::cout << "Remote Clients for Meta Data connection." << std::endl;
+            for (const auto &host_info : PageAllocator::memory_pool->configs->get_hosts())
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+                const std::string &host_ip = host_info.host;
+                int metadata_port = host_info.metadata_port;
+
+                // Connect to the remote metadata server
+                RDMAClient *client = new RDMAClient(host_ip, metadata_port, true);
+                if (client->connectToServer())
+                {
+                    std::cout << "Connected to remote metadata server at IP: " << host_ip << ", port: " << metadata_port << std::endl;
+                    client->print_client();
+                    PageAllocator::memory_pool->RemoteMetadata.push_back(client);
+                }
+                else
+                {
+                    std::cerr << "Failed to connect to remote metadata server at IP: " << host_ip << ", port: " << metadata_port << std::endl;
+                }
+            }
+        }
     }
 
     page_cache_t::~page_cache_t()
