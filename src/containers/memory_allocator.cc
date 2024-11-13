@@ -48,10 +48,8 @@ MemoryPool::MemoryPool(size_t pool_size, size_t alignment)
         RDMAClient *client = new RDMAClient(host_ip, memory_port, false);
         if (client->connectToServer())
         {
-            std::cout << "[before RemoteMemoryPool] Connected to remote memory pool at IP: " << host_ip << ", port: " << memory_port << std::endl;
-            client->print_client();
-            RemoteMemoryPool.push_back(client);
             std::cout << "Connected to remote memory pool at IP: " << host_ip << ", port: " << memory_port << std::endl;
+            RemoteMemoryPool.push_back(client);
         }
         else
         {
@@ -100,7 +98,7 @@ void MemoryPool::deallocate(void *ptr)
 // Get offset of a pointer within the memory pool
 uint64_t MemoryPool::get_offset(void *ptr)
 {
-    std::cout << "Getting offset for memory at address " << ptr << std::endl;
+    // std::cout << "Getting offset for memory at address " << ptr << std::endl;
     return static_cast<uint64_t>(static_cast<char *>(ptr) - mem_start);
 }
 
@@ -193,4 +191,19 @@ void MemoryPool::populate_block()
 
         std::cout << "Block " << i << " populated with random characters at address " << static_cast<void *>(block) << std::endl;
     }
+}
+
+RDMAClient *MemoryPool::check_block_exists(block_id_t block_id)
+{
+    uint64_t offset = 0;
+    std::lock_guard<std::mutex> lock(pool_mutex); // Ensure thread-safe access
+
+    for (RDMAClient *client : RemoteMemoryPool)
+    {
+        if (client->getPageMap()->isBlockIDAvailable(block_id) != 0)
+        {
+            return client;
+        }
+    }
+    return nullptr;
 }

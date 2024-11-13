@@ -9,8 +9,9 @@
 #include <random>
 
 #define CLIENT_BUFFER_SIZE (64 * 1024) // 64 KB buffer size
-#define MAX_BLOCKS 100000
+#define MAX_METADATA_BLOCKS 100000
 
+class PageMap;
 class RDMAServer
 {
 public:
@@ -71,6 +72,16 @@ public:
         std::cout << "meta_data_buffer: " << meta_data_buffer << std::endl;
     }
 
+    PageMap *getPageMap() const { return page_map; }
+    void **getMetaDataTmpBuffer() { return &meta_data_tmp_buffer; }
+    void setMetaDataBuffer(void *buffer) { meta_data_tmp_buffer = buffer; }
+    void *getMetaDataBuffer() { return meta_data_buffer->getData(); }
+    void setPageMap(PageMap *map) { page_map = map; }
+    void updateMetaDataBuffer()
+    {
+        memcpy(meta_data_tmp_buffer, meta_data_buffer->getData(), meta_data_buffer->getSizeInBytes());
+    }
+
 private:
     std::string ip;
     uint16_t port;
@@ -88,4 +99,8 @@ private:
     infinity::memory::Buffer *page_buffer;
     infinity::memory::Buffer *meta_data_buffer;
     infinity::requests::RequestToken *request_token;
+
+    PageMap *page_map;
+    void *meta_data_tmp_buffer;
+    std::mutex page_map_mutex;
 };

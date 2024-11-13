@@ -58,13 +58,11 @@ void RDMAServer::init(void *memory_region, uint64_t size, int server_port, int e
     // Create RDMA context and queue pair factory
     context = new infinity::core::Context(device_name);
     qp_factory = new infinity::queues::QueuePairFactory(context);
-    std::cout << "Created RDMA context and queue pair factory." << std::endl;
 
     // Create RDMA buffer and region token
     buffer = new infinity::memory::Buffer(context, memory_region, size);
 
     remote_buffer_token = buffer->createRegionToken();
-    std::cout << "Created RDMA buffer and region token." << std::endl;
 
     // Bind to port and accept incoming connection
     qp_factory->bindToPort(server_port);
@@ -86,7 +84,7 @@ void RDMAServer::init(void *memory_region, uint64_t size, int server_port, int e
 RDMAClient::RDMAClient(const std::string &ip, uint16_t port, bool isMetaData)
     : ip(ip), port(port), device_hint("mlx5_3"), output_file("dump.txt"),
       context(nullptr), qp(nullptr), qp_factory(nullptr), remote_buffer_token(nullptr),
-      meta_data_buffer(nullptr), page_buffer(nullptr), request_token(nullptr) {}
+      meta_data_buffer(nullptr), page_buffer(nullptr), request_token(nullptr), page_map(nullptr) {}
 
 // RDMAClient Destructor
 RDMAClient::~RDMAClient()
@@ -98,6 +96,10 @@ RDMAClient::~RDMAClient()
     if (meta_data_buffer != nullptr)
     {
         delete meta_data_buffer;
+    }
+    if (meta_data_tmp_buffer != nullptr)
+    {
+        free(meta_data_tmp_buffer);
     }
     if (request_token != nullptr)
     {
@@ -151,7 +153,6 @@ bool RDMAClient::connectToServer()
     // Connect to the remote server
     std::cout << "Connecting to server at " << ip << ":" << port << std::endl;
     qp = qp_factory->connectToRemoteHost(ip.c_str(), port);
-    std::cout << "Connected to server." << std::endl;
 
     // Retrieve the remote memory region token from the server
     remote_buffer_token = static_cast<infinity::memory::RegionToken *>(qp->getUserData());
@@ -160,7 +161,6 @@ bool RDMAClient::connectToServer()
         std::cerr << "Failed to get remote buffer token from server." << std::endl;
         return false;
     }
-    std::cout << "Received remote buffer token from server." << std::endl;
 
     // Allocate a fixed 64KB local buffer for RDMA reads
     const uint64_t buffer_size = CLIENT_BUFFER_SIZE; // 64KB
@@ -170,20 +170,14 @@ bool RDMAClient::connectToServer()
         std::cerr << "Failed to allocate local buffer memory." << std::endl;
         return false;
     }
-    std::cout << "Allocated local buffer memory." << std::endl;
 
-    void *meta_data_buffer_memory = malloc(MAX_BLOCKS * sizeof(size_t));
-
-    std::cout << "Allocated metadata buffer memory." << std::endl;
+    void *meta_data_buffer_memory = malloc(MAX_METADATA_BLOCKS * sizeof(size_t));
 
     page_buffer = new infinity::memory::Buffer(context, local_buffer_memory, buffer_size);
-    std::cout << "Created page buffer." << std::endl;
-    meta_data_buffer = new infinity::memory::Buffer(context, meta_data_buffer_memory, MAX_BLOCKS * sizeof(size_t));
-    std::cout << "Created metadata buffer." << std::endl;
+    meta_data_buffer = new infinity::memory::Buffer(context, meta_data_buffer_memory, MAX_METADATA_BLOCKS * sizeof(size_t));
     request_token = new infinity::requests::RequestToken(context);
-    std::cout << "Created request token." << std::endl;
 
-    std::cout << "Client initialization complete." << std::endl;
+    meta_data_tmp_buffer = malloc(meta_data_buffer->getSizeInBytes());
 
     return true;
 }
@@ -218,22 +212,21 @@ void RDMAClient::performRDMARead(uint64_t total_buffer_size)
 
 void RDMAClient::readMetadata()
 {
-    std::ofstream output("metadata.txt", std::ios::out | std::ios::binary);
-    if (!output)
-    {
-        std::cerr << "Failed to open output file: " << output_file << std::endl;
-        return;
-    }
+    // std::ofstream output("metadata.txt", std::ios::out | std::ios::binary);
+    // if (!output)
+    // {
+    //     std::cerr << "Failed to open output file: " << output_file << std::endl;
+    //     return;
+    // }
 
     uint64_t offset = 0;
     uint64_t buffer_size = meta_data_buffer->getSizeInBytes();
 
-    std::cout << "Performing RDMA read (offset " << offset << ", size " << buffer_size << ")..." << std::endl;
+    // std::cout << "Performing RDMA read (offset " << offset << ", size " << buffer_size << ")..." << std::endl;
     qp->read(meta_data_buffer, 0, remote_buffer_token, offset, buffer_size, infinity::queues::OperationFlags(), request_token);
     request_token->waitUntilCompleted();
 
-    output.write(static_cast<char *>(meta_data_buffer->getData()), buffer_size);
-
-    output.close();
-    std::cout << "Data written to file: " << output_file << std::endl;
+    // output.write(static_cast<char *>(meta_data_buffer->getData()), buffer_size);
+    // output.close();
+    // std::cout << "Data written to file: " << output_file << std::endl;
 }

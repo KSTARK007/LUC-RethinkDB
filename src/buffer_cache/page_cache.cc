@@ -249,7 +249,30 @@ namespace alt
         fifo_enforcer_sink_t sink;
         new_mutex_t mutex;
     };
-
+    void update_client_metadata(RDMAClient *client)
+    {
+        int file_number = 0;
+        while (true)
+        {
+            std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+            client->readMetadata();
+            std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+            std::cout << "Time taken to RDMA read metadata: " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << " us" << std::endl;
+            // client->getPageMap()->print_block_offset_map(client->getMetaDataBuffer());
+            begin = std::chrono::steady_clock::now();
+            client->updateMetaDataBuffer();
+            end = std::chrono::steady_clock::now();
+            std::cout << "Time taken to updateMetadata: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " ns" << std::endl;
+            begin = std::chrono::steady_clock::now();
+            client->getPageMap()->update_block_offset_map(client->getMetaDataTmpBuffer());
+            end = std::chrono::steady_clock::now();
+            std::cout << "Time taken to update block offset map: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " ns" << std::endl;
+            {
+                client->getPageMap()->print_map_to_file(client->getPageMap()->file_number++);
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
     page_cache_t::page_cache_t(serializer_t *_serializer,
                                cache_balancer_t *balancer,
                                alt_txn_throttler_t *throttler)
@@ -294,8 +317,7 @@ namespace alt
         if (page_map.port_number == 6001)
         {
             std::cout << "Initializing RDMA server on port " << page_map.port_number << std::endl;
-            std::cout << "Initializing RDMA server on port " << page_map.port_number << std::endl;
-            int pool_size = MAX_BLOCKS * sizeof(size_t);
+            int pool_size = MAX_METADATA_BLOCKS * sizeof(size_t);
             int expected_connections = PageAllocator::memory_pool->configs->get_hosts().size();
             std::thread server_thread([this, pool_size, expected_connections]()
                                       { page_map.rdma_connection.init(page_map.block_offset_map, pool_size, page_map.port_number, expected_connections); });
@@ -312,8 +334,13 @@ namespace alt
                 RDMAClient *client = new RDMAClient(host_ip, metadata_port, true);
                 if (client->connectToServer())
                 {
+                    PageMap *page_map = new PageMap(0);
+                    client->setPageMap(page_map);
                     std::cout << "Connected to remote metadata server at IP: " << host_ip << ", port: " << metadata_port << std::endl;
-                    client->print_client();
+
+                    std::thread update_thread(update_client_metadata, client);
+                    update_thread.detach();
+
                     PageAllocator::memory_pool->RemoteMetadata.push_back(client);
                 }
                 else

@@ -34,9 +34,7 @@ public:
 
     void populate_block();
 
-    void connect_to_remote_memory_pools();
-
-    void connect_to_remote_metadata();
+    RDMAClient *check_block_exists(block_id_t block_id);
 
     void print_allocation_memory();
     struct FreeBlock
