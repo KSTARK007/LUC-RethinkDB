@@ -1,3 +1,4 @@
+#pragma once
 #include <cstdlib>
 #include <iostream>
 #include <cstring>
@@ -9,7 +10,7 @@
 #include "containers/rdma.hpp"
 #include <random>
 
-#define MAX_POOL_SIZE (uint64_t)(10) * 1024 * 1024 * 1024 // 10 GB
+#define MAX_POOL_SIZE (uint64_t)(20) * 1024 * 1024 * 1024 // 10 GB
 #define SERVER_PORT_MAIN_CACHE 5000
 
 typedef uint64_t block_id_t;
@@ -34,9 +35,13 @@ public:
 
     void populate_block();
 
-    RDMAClient *check_block_exists(block_id_t block_id);
+    std::pair<RDMAClient *, size_t> check_block_exists(block_id_t block_id);
+
+    void *get_buffer_from_offset(RDMAClient *client, uint64_t offset, size_t size);
 
     void print_allocation_memory();
+
+    bool is_within_cache_limit(block_id_t block_id);
     struct FreeBlock
     {
         FreeBlock *next;
@@ -50,6 +55,8 @@ public:
     RDMAServer rdma_connection;
     std::vector<RDMAClient *> RemoteMemoryPool;
     std::vector<RDMAClient *> RemoteMetadata;
+    int max_block_cap;
+    int min_block_cap;
 
     std::atomic<bool> server_ready;
 
@@ -79,6 +86,7 @@ public:
 
     static void destroy_pool()
     {
+        std::cout << "Destroying memory pool..." << std::endl;
         delete memory_pool;
         memory_pool = nullptr;
     }

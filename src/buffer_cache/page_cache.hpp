@@ -2,6 +2,12 @@
 #ifndef BUFFER_CACHE_PAGE_CACHE_HPP_
 #define BUFFER_CACHE_PAGE_CACHE_HPP_
 
+// #define RDMA_ENABLED true
+#define RDMA_ENABLED false
+
+#define PRINT_MAPS true
+// #define PRINT_MAPS false
+
 #include <functional>
 #include <map>
 #include <set>
@@ -95,6 +101,7 @@ namespace alt
     {
     public:
         current_page_t(block_id_t block_id, buf_ptr_t buf, page_cache_t *page_cache);
+        current_page_t(block_id_t block_id, buf_ptr_t buf, page_cache_t *page_cache, bool isRDMA);
         current_page_t(block_id_t block_id, buf_ptr_t buf,
                        const counted_t<standard_block_token_t> &token,
                        page_cache_t *page_cache);
@@ -399,6 +406,8 @@ namespace alt
 
         auto_drainer_t::lock_t drainer_lock() { return drainer_->lock(); }
         serializer_t *serializer() { return serializer_; }
+
+        PageMap *getPageMap() { return &page_map; }
 
     private:
         friend class page_read_ahead_cb_t;

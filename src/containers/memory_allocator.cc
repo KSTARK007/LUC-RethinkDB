@@ -56,6 +56,21 @@ MemoryPool::MemoryPool(size_t pool_size, size_t alignment)
             std::cerr << "Failed to connect to remote memory pool at IP: " << host_ip << ", port: " << memory_port << std::endl;
         }
     }
+    if (rdma_connection.getIP() == "10.10.1.1")
+    {
+        min_block_cap = 0;
+        max_block_cap = static_cast<int>(ACTUAL_DATA_BLOCKS) / 3;
+    }
+    if (rdma_connection.getIP() == "10.10.1.2")
+    {
+        min_block_cap = 1 + (static_cast<int>(ACTUAL_DATA_BLOCKS) / 3);
+        max_block_cap = 2 * static_cast<int>(ACTUAL_DATA_BLOCKS) / 3;
+    }
+    if (rdma_connection.getIP() == "10.10.1.3")
+    {
+        min_block_cap = 1 + 2 * (static_cast<int>(ACTUAL_DATA_BLOCKS) / 3);
+        max_block_cap = static_cast<int>(ACTUAL_DATA_BLOCKS);
+    }
     // server_thread.join();
 }
 
@@ -63,13 +78,18 @@ MemoryPool::MemoryPool(size_t pool_size, size_t alignment)
 MemoryPool::~MemoryPool()
 {
     free(memory);
-    std::cout << "Memory pool destroyed." << std::endl;
+    std::cout << "MEMPOOL DEALLOCATED" << std::endl;
 }
 
 // Allocate memory from the aligned pool
 void *MemoryPool::allocate(size_t size)
 {
-    std::lock_guard<std::mutex> lock(pool_mutex); // Thread-safe access
+    if (!PageAllocator::memory_pool)
+    {
+        std::cerr << "Memory pool not initialized!" << std::endl;
+        return nullptr;
+    }
+    std::lock_guard<std::mutex> lock(pool_mutex);
 
     size_t alignment = sysconf(_SC_PAGESIZE);
     char *aligned_memory = reinterpret_cast<char *>((reinterpret_cast<uintptr_t>(memory) + (alignment - 1)) & ~(alignment - 1));
@@ -193,17 +213,45 @@ void MemoryPool::populate_block()
     }
 }
 
-RDMAClient *MemoryPool::check_block_exists(block_id_t block_id)
+std::pair<RDMAClient *, size_t> MemoryPool::check_block_exists(block_id_t block_id)
 {
     uint64_t offset = 0;
     std::lock_guard<std::mutex> lock(pool_mutex); // Ensure thread-safe access
 
-    for (RDMAClient *client : RemoteMemoryPool)
+    for (RDMAClient *meta_data_client : RemoteMetadata)
     {
-        if (client->getPageMap()->isBlockIDAvailable(block_id) != 0)
+        // std::cout << "Checking block " << block_id << " on remote server with ip" << meta_data_client->getIP() << std::endl;
+        if (meta_data_client->getPageMap() == nullptr)
         {
-            return client;
+            std::cerr << "Page map is null for meta_data_client." << std::endl;
+            continue;
+        }
+        size_t block_offset = meta_data_client->getPageMap()->isBlockIDAvailable(block_id);
+        if (block_offset != 0)
+        {
+            for (RDMAClient *memory_client : RemoteMemoryPool)
+            {
+                if (memory_client->getIP() == meta_data_client->getIP())
+                {
+                    return std::make_pair(memory_client, block_offset);
+                }
+            }
         }
     }
-    return nullptr;
+    return std::make_pair(nullptr, 0);
+}
+
+void *get_buffer_from_offset(RDMAClient *client, uint64_t offset, size_t size)
+{
+    void *buffer = client->getPageFromOffset(offset, size);
+    if (buffer == nullptr)
+    {
+        std::cerr << "Failed to get buffer from offset " << offset << " with size " << size << std::endl;
+    }
+    return buffer;
+}
+
+bool MemoryPool::is_within_cache_limit(block_id_t block_id)
+{
+    return block_id >= min_block_cap && block_id < max_block_cap;
 }

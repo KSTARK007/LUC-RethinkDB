@@ -178,6 +178,7 @@ bool RDMAClient::connectToServer()
     request_token = new infinity::requests::RequestToken(context);
 
     meta_data_tmp_buffer = malloc(meta_data_buffer->getSizeInBytes());
+    page_buffer_tmp = malloc(page_buffer->getSizeInBytes());
 
     return true;
 }
@@ -212,21 +213,32 @@ void RDMAClient::performRDMARead(uint64_t total_buffer_size)
 
 void RDMAClient::readMetadata()
 {
-    // std::ofstream output("metadata.txt", std::ios::out | std::ios::binary);
-    // if (!output)
-    // {
-    //     std::cerr << "Failed to open output file: " << output_file << std::endl;
-    //     return;
-    // }
-
     uint64_t offset = 0;
     uint64_t buffer_size = meta_data_buffer->getSizeInBytes();
 
     // std::cout << "Performing RDMA read (offset " << offset << ", size " << buffer_size << ")..." << std::endl;
     qp->read(meta_data_buffer, 0, remote_buffer_token, offset, buffer_size, infinity::queues::OperationFlags(), request_token);
     request_token->waitUntilCompleted();
+}
 
-    // output.write(static_cast<char *>(meta_data_buffer->getData()), buffer_size);
-    // output.close();
-    // std::cout << "Data written to file: " << output_file << std::endl;
+void *RDMAClient::getPageFromOffset(uint64_t offset, size_t size)
+{
+    // Perform RDMA read to retrieve the page from the server
+    qp->read(page_buffer, 0, remote_buffer_token, offset, size, infinity::queues::OperationFlags(), request_token);
+    request_token->waitUntilCompleted();
+
+    return page_buffer->getData();
+}
+
+bool RDMAClient::performFrequencyMapLookup(uint64_t block_id)
+{
+    if (frequency_map.find(block_id) == frequency_map.end())
+    {
+        return false;
+    }
+    if (frequency_map[block_id] > RDMA_TO_LOCAL_FREQUENCY)
+    {
+        return true;
+    }
+    return false;
 }

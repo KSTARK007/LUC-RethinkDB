@@ -170,7 +170,7 @@ namespace alt
 
         if (page_instance != nullptr)
         {
-            void *page_buffer = page_instance->get_page_buf(this); // Use get_page_buf to access buffer
+            void *page_buffer = page_instance->get_page_buf(this);
 
             if (page_buffer != nullptr)
             {
@@ -184,7 +184,7 @@ namespace alt
         }
         else
         {
-            std::cerr << "add_read_ahead_buf Error: Page instance is null for block_id " << block_id << std::endl;
+            page_map.add_to_map(block_id, static_cast<size_t>(-1));
         }
     }
 
@@ -251,27 +251,54 @@ namespace alt
     };
     void update_client_metadata(RDMAClient *client)
     {
+        if (client == nullptr)
+        {
+            std::cerr << "Error: client is null at the start of update_client_metadata." << std::endl;
+            return;
+        }
+
         int file_number = 0;
         while (true)
         {
-            std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+            // std::cout << "Updating metadata for client" << std::endl;
+
             client->readMetadata();
-            std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-            std::cout << "Time taken to RDMA read metadata: " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << " us" << std::endl;
-            // client->getPageMap()->print_block_offset_map(client->getMetaDataBuffer());
-            begin = std::chrono::steady_clock::now();
-            client->updateMetaDataBuffer();
-            end = std::chrono::steady_clock::now();
-            std::cout << "Time taken to updateMetadata: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " ns" << std::endl;
-            begin = std::chrono::steady_clock::now();
-            client->getPageMap()->update_block_offset_map(client->getMetaDataTmpBuffer());
-            end = std::chrono::steady_clock::now();
-            std::cout << "Time taken to update block offset map: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " ns" << std::endl;
+
+            if (client->getMetaDataTmpBuffer() == nullptr)
             {
-                client->getPageMap()->print_map_to_file(client->getPageMap()->file_number++);
+                std::cerr << "Error: MetaDataTmpBuffer is null." << std::endl;
+                break;
             }
+
+            client->updateMetaDataBuffer();
+            client->getPageMap()->update_block_offset_map(client->getMetaDataTmpBuffer());
+
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
+        // while (true)
+        // {
+        //     std::cout << "Updating metadata for client" << std::endl;
+        //     client->readMetadata();
+        //     client->updateMetaDataBuffer();
+        //     client->getPageMap()->update_block_offset_map(client->getMetaDataTmpBuffer());
+        //     // std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+        //     // client->readMetadata();
+        //     // std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+        //     // std::cout << "Time taken to RDMA read metadata: " << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << " us" << std::endl;
+        //     // // client->getPageMap()->print_block_offset_map(client->getMetaDataBuffer());
+        //     // begin = std::chrono::steady_clock::now();
+        //     // client->updateMetaDataBuffer();
+        //     // end = std::chrono::steady_clock::now();
+        //     // std::cout << "Time taken to updateMetadata: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " ns" << std::endl;
+        //     // begin = std::chrono::steady_clock::now();
+        //     // client->getPageMap()->update_block_offset_map(client->getMetaDataTmpBuffer());
+        //     // end = std::chrono::steady_clock::now();
+        //     // std::cout << "Time taken to update block offset map: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " ns" << std::endl;
+        //     // {
+        //     //     client->getPageMap()->print_map_to_file(client->getPageMap()->file_number++);
+        //     // }
+        //     std::this_thread::sleep_for(std::chrono::seconds(1));
+        // }
     }
     page_cache_t::page_cache_t(serializer_t *_serializer,
                                cache_balancer_t *balancer,
@@ -337,11 +364,10 @@ namespace alt
                     PageMap *page_map = new PageMap(0);
                     client->setPageMap(page_map);
                     std::cout << "Connected to remote metadata server at IP: " << host_ip << ", port: " << metadata_port << std::endl;
+                    PageAllocator::memory_pool->RemoteMetadata.push_back(client);
 
                     std::thread update_thread(update_client_metadata, client);
                     update_thread.detach();
-
-                    PageAllocator::memory_pool->RemoteMetadata.push_back(client);
                 }
                 else
                 {
@@ -482,6 +508,7 @@ namespace alt
     current_page_t *page_cache_t::page_for_block_id(block_id_t block_id)
     {
         assert_thread();
+        bool should_add_to_local_cache = false;
 
         auto page_it = current_pages_.find(block_id);
         if (page_it == current_pages_.end())
@@ -491,58 +518,182 @@ namespace alt
                     "Expected block %" PR_BLOCK_ID " not to be deleted "
                     "(should you have used alt_create_t::create?).",
                     block_id);
-            page_it = current_pages_.insert(
-                page_it, std::make_pair(block_id, new current_page_t(block_id)));
-            page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
-
-            if (page_instance != nullptr)
+            if (RDMA_ENABLED)
             {
-                void *page_buffer = page_instance->get_page_buf(this); // Use get_page_buf to access buffer
 
-                if (page_buffer != nullptr)
+                std::cout << "Block " << block_id << " not found in the cache. page_port " << page_map.port_number << std::endl;
+                std::pair<RDMAClient *, size_t> tmp;
+                RDMAClient *client = nullptr;
+                size_t offset = 0;
+                if (page_map.port_number == 6001)
                 {
-                    uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
-                    page_map.add_to_map(block_id, page_offset_tmp);
+                    auto begin = std::chrono::steady_clock::now();
+                    tmp = PageAllocator::memory_pool->check_block_exists(block_id);
+                    auto end = std::chrono::steady_clock::now();
+                    std::cout << "Time taken for check_block_exists: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+                    client = tmp.first;
+                    offset = tmp.second;
+                }
+                if (client != nullptr && block_id != 0 && offset != static_cast<size_t>(-1))
+                {
+                    uint32_t page_size = max_block_size_.value();
+                    std::cout << "Block " << block_id << " exists on remote server." << client->getIP() << std::endl;
+
+                    auto begin = std::chrono::steady_clock::now();
+                    void *block_data = client->getPageFromOffset(offset, page_size);
+                    auto end = std::chrono::steady_clock::now();
+                    std::cout << "Time taken for getPageFromOffset: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                    if (block_data != nullptr)
+                    {
+                        uint32_t ser_bs = page_size + sizeof(ls_buf_data_t); // Total serialized block size
+                        block_size_t block_size = block_size_t::unsafe_make(ser_bs);
+
+                        begin = std::chrono::steady_clock::now();
+                        buf_ptr_t buf = buf_ptr_t::alloc_uninitialized(block_size);
+                        end = std::chrono::steady_clock::now();
+                        std::cout << "Time taken for alloc_uninitialized: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                        begin = std::chrono::steady_clock::now();
+                        std::memcpy(buf.cache_data(), block_data, page_size);
+                        end = std::chrono::steady_clock::now();
+                        std::cout << "Time taken for memcpy: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                        begin = std::chrono::steady_clock::now();
+                        buf.fill_padding_zero();
+                        end = std::chrono::steady_clock::now();
+                        std::cout << "Time taken for fill_padding_zero: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                        begin = std::chrono::steady_clock::now();
+                        current_page_t *page = new current_page_t(block_id, std::move(buf), this, true);
+                        end = std::chrono::steady_clock::now();
+                        std::cout << "Time taken for creating current_page_t: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                        begin = std::chrono::steady_clock::now();
+                        client->addFrequencyMapEntry(block_id);
+                        end = std::chrono::steady_clock::now();
+                        std::cout << "Time taken for addFrequencyMapEntry: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                        if (client->performFrequencyMapLookup(block_id))
+                        {
+                            begin = std::chrono::steady_clock::now();
+                            page_it = current_pages_.insert(page_it, std::make_pair(block_id, page));
+                            end = std::chrono::steady_clock::now();
+                            std::cout << "Time taken for current_pages_.insert: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                            begin = std::chrono::steady_clock::now();
+                            page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
+                            end = std::chrono::steady_clock::now();
+                            std::cout << "Time taken for get_page_for_read: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                            if (page_instance != nullptr)
+                            {
+                                begin = std::chrono::steady_clock::now();
+                                void *page_buffer = page_instance->get_page_buf(this);
+                                end = std::chrono::steady_clock::now();
+                                std::cout << "Time taken for get_page_buf: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                                if (page_buffer != nullptr)
+                                {
+                                    begin = std::chrono::steady_clock::now();
+                                    uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                                    end = std::chrono::steady_clock::now();
+                                    std::cout << "Time taken for get_offset: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+
+                                    begin = std::chrono::steady_clock::now();
+                                    page_map.add_to_map(block_id, page_offset_tmp);
+                                    end = std::chrono::steady_clock::now();
+                                    std::cout << "Time taken for add_to_map: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count() << " us" << std::endl;
+                                }
+                            }
+                            else
+                            {
+                                page_map.add_to_map(block_id, static_cast<size_t>(-1));
+                            }
+                        }
+                        return page;
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Block data unavailable for block_id " << block_id << std::endl;
+                    }
                 }
                 else
                 {
-                    std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
+                    //     // current_page_t *page = new current_page_t(block_id);
+                    page_it = current_pages_.insert(
+                        page_it, std::make_pair(block_id, new current_page_t(block_id)));
+                    page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
+
+                    if (page_instance != nullptr)
+                    {
+                        void *page_buffer = page_instance->get_page_buf(this);
+
+                        if (page_buffer != nullptr)
+                        {
+                            uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                            page_map.add_to_map(block_id, page_offset_tmp);
+                        }
+                        else
+                        {
+                            std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
+                        }
+                    }
+                    else
+                    {
+                        page_map.add_to_map(block_id, static_cast<size_t>(-1));
+                    }
+                    misses_++;
                 }
             }
             else
             {
-                std::cerr << " page_for_block_id Error: Page instance is null for block_id " << block_id << std::endl;
+                // current_page_t *page = new current_page_t(block_id);
+                page_it = current_pages_.insert(
+                    page_it, std::make_pair(block_id, new current_page_t(block_id)));
+                page_t *page_instance = page_it->second->page_.get_page_for_read();
+
+                if (page_instance != nullptr)
+                {
+                    void *page_buffer = page_instance->get_page_buf(this);
+
+                    if (page_buffer != nullptr)
+                    {
+                        uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                        page_map.add_to_map(block_id, page_offset_tmp);
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
+                    }
+                }
+                else
+                {
+                    page_map.add_to_map(block_id, static_cast<size_t>(-1));
+                }
+                misses_++;
             }
-            misses_++;
         }
         else
         {
             rassert(!page_it->second->is_deleted());
         }
-        operation_count.fetch_add(1);
+        if (PRINT_MAPS)
         {
-            std::lock_guard<std::mutex> lock(file_number_mutex);
-            if (operation_count.load() >= 1000000)
+            operation_count.fetch_add(1);
             {
-                print_current_pages_to_file(page_map.file_number);
-                page_map.print_map_to_file(page_map.file_number);
-                // std::stringstream ts;
-                // ts << "dump" << std::this_thread::get_id() << ".txt";
-                // std::string file_name_t = ts.str();
-
-                // std::ofstream tfile(file_name_t, std::ios_base::app); // Append mode
-                // if (!tfile)
-                // {
-                //     std::cerr << "Failed to open file for writing." << std::endl;
-                //     // return;
-                // }
-
-                // tfile << "Current map contents:\n";
-                // int tmp = 0;
-                // tfile << PageAllocator::memory_pool->read_block(page_map.get_offset_from_map(100), 4096) << std::endl;
-                // PageAllocator::memory_pool->print_allocation_memory();
-                page_map.file_number++;
-                operation_count.store(0);
+                std::lock_guard<std::mutex> lock(file_number_mutex);
+                if (operation_count.load() >= 50000)
+                {
+                    print_current_pages_to_file(page_map.file_number);
+                    page_map.print_map_to_file(page_map.file_number);
+                    page_map.file_number++;
+                    operation_count.store(0);
+                    for (RDMAClient *client : PageAllocator::memory_pool->RemoteMetadata)
+                    {
+                        client->getPageMap()->print_map_to_file_remote_metadata(client->getIP(), client->getPageMap()->file_number++);
+                    }
+                }
             }
         }
 
@@ -606,7 +757,7 @@ namespace alt
 
         if (page_instance != nullptr)
         {
-            void *page_buffer = page_instance->get_page_buf(this); // Use get_page_buf as specified
+            void *page_buffer = page_instance->get_page_buf(this);
 
             if (page_buffer != nullptr)
             {
@@ -620,7 +771,7 @@ namespace alt
         }
         else
         {
-            std::cerr << "internal_page_for_new_chosen Error: Page instance is null for block_id " << block_id << std::endl;
+            page_map.add_to_map(block_id, static_cast<size_t>(-1));
         }
 
         misses_++;
@@ -952,6 +1103,22 @@ namespace alt
                                    page_cache_t *page_cache)
         : block_id_(block_id),
           page_(new page_t(block_id, std::move(buf), page_cache)),
+          is_deleted_(false),
+          last_write_acquirer_(nullptr),
+          num_keepalives_(0)
+    {
+        // Increment the block version so that we can distinguish between unassigned
+        // current_page_acq_t::block_version_ values (which are 0) and assigned ones.
+        rassert(last_write_acquirer_version_.debug_value() == 0);
+        last_write_acquirer_version_ = last_write_acquirer_version_.subsequent();
+    }
+
+    current_page_t::current_page_t(block_id_t block_id,
+                                   buf_ptr_t buf,
+                                   page_cache_t *page_cache,
+                                   bool isRDMA)
+        : block_id_(block_id),
+          page_(new page_t(block_id, std::move(buf), page_cache, isRDMA)),
           is_deleted_(false),
           last_write_acquirer_(nullptr),
           num_keepalives_(0)

@@ -96,12 +96,12 @@ public:
         if (block_id < MAX_METADATA_BLOCKS && block_offset_map[block_id] != static_cast<size_t>(-1))
         {
             block_offset_map[block_id] = static_cast<size_t>(-1); // Reset to invalid offset
-            std::cout << "Removed block_id " << block_id << " from the map." << std::endl;
+            // std::cout << "Removed block_id " << block_id << " from the map." << std::endl;
         }
-        else
-        {
-            std::cerr << "block_id " << block_id << " not found in the map." << std::endl;
-        }
+        // else
+        // {
+        //     std::cerr << "block_id " << block_id << " not found in the map." << std::endl;
+        // }
     }
 
     // Retrieve the offset for a given block_id
@@ -153,12 +153,38 @@ public:
         std::cout << "Map contents written to file." << std::endl;
     }
 
-    void update_block_offset_map(void **new_map)
+    void print_map_to_file_remote_metadata(std::string ip, size_t file_number)
     {
-        std::lock_guard<std::mutex> lock(map_mutex);
-        void *temp = block_offset_map;
-        block_offset_map = static_cast<size_t *>(*new_map);
-        *new_map = temp;
+        // std::lock_guard<std::mutex> lock(map_mutex);
+        std::stringstream ss;
+        ss << "page_map_output_remote_ip" << ip << "_filenumber" << file_number << ".txt";
+        std::string file_name = ss.str();
+        std::ofstream outfile(file_name, std::ios_base::app); // Append mode
+        if (!outfile)
+        {
+            std::cerr << "Failed to open file for writing." << std::endl;
+            return;
+        }
+
+        if (block_offset_map == nullptr)
+        {
+            std::cerr << "block_offset_map is null." << std::endl;
+            return;
+        }
+
+        outfile << "Current map contents:\n";
+        for (block_id_t i = 0; i < MAX_METADATA_BLOCKS; ++i)
+        {
+            // std::cout << "block_id: " << i << std::endl;
+            // std::cout << ", offset: " << block_offset_map[i] << std::endl;
+            if (block_offset_map[i] != static_cast<size_t>(-1))
+            {
+                outfile << "block_id: " << i << ", offset: " << block_offset_map[i] << "\n";
+            }
+        }
+        outfile << "--------------------------\n";
+        outfile.close();
+        std::cout << "Map contents written to file." << std::endl;
     }
 
     void print_block_offset_map(void *new_map)
@@ -188,13 +214,34 @@ public:
             }
         }
     }
+
+    void update_block_offset_map(void **new_map)
+    {
+        std::lock_guard<std::mutex> lock(map_mutex);
+        void *temp = block_offset_map;
+        block_offset_map = static_cast<size_t *>(*new_map);
+        *new_map = temp;
+    }
+
     size_t isBlockIDAvailable(block_id_t block_id)
     {
+        // std::lock_guard<std::mutex> lock(map_mutex);
         if (block_offset_map[block_id] != static_cast<size_t>(-1) && block_offset_map[block_id] != 0)
         {
             return block_offset_map[block_id];
         }
         return 0;
+    }
+
+    bool updateBlockID(block_id_t block_id, size_t offset)
+    {
+        // std::lock_guard<std::mutex> lock(map_mutex);
+        if (block_offset_map[block_id] != static_cast<size_t>(-1))
+        {
+            block_offset_map[block_id] = offset;
+            return true;
+        }
+        return false;
     }
 
     size_t file_number;

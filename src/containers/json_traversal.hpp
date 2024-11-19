@@ -45,6 +45,7 @@ public:
 
     void print_hosts()
     {
+        std::cout << "Hosts:" << std::endl;
         for (const auto &host : hosts)
         {
             std::cout << "Host: " << host.host << ", Memory Port: " << host.memory_port << ", Metadata Port: " << host.metadata_port << std::endl;

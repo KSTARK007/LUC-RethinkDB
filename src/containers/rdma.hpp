@@ -10,6 +10,9 @@
 
 #define CLIENT_BUFFER_SIZE (64 * 1024) // 64 KB buffer size
 #define MAX_METADATA_BLOCKS 100000
+#define ACTUAL_DATA_BLOCKS 8000
+
+#define RDMA_TO_LOCAL_FREQUENCY 100
 
 class PageMap;
 class RDMAServer
@@ -33,6 +36,7 @@ public:
     infinity::memory::RegionToken *getRemoteBufferToken() const { return remote_buffer_token; }
     infinity::memory::Buffer *getBuffer() const { return buffer; }
     bool isLocalNode() const { return isLocal; }
+    std::string getIP() const { return ip; }
 
 private:
     // Member variables
@@ -43,6 +47,7 @@ private:
     infinity::queues::QueuePairFactory *qp_factory;
     infinity::memory::RegionToken *remote_buffer_token;
     infinity::memory::Buffer *buffer;
+
     bool isLocal;
     std::mutex rdma_mutex; // For thread safety if needed
 
@@ -82,6 +87,24 @@ public:
         memcpy(meta_data_tmp_buffer, meta_data_buffer->getData(), meta_data_buffer->getSizeInBytes());
     }
 
+    void *getPageFromOffset(uint64_t offset, size_t size);
+    std::string getIP() const { return ip; }
+
+    // Method to perform frequency map lookup and addition
+    bool performFrequencyMapLookup(uint64_t block_id);
+
+    void addFrequencyMapEntry(uint64_t block_id)
+    {
+        if (frequency_map.find(block_id) == frequency_map.end())
+        {
+            frequency_map[block_id] = 1;
+        }
+        else
+        {
+            frequency_map[block_id]++;
+        }
+    }
+
 private:
     std::string ip;
     uint16_t port;
@@ -102,5 +125,7 @@ private:
 
     PageMap *page_map;
     void *meta_data_tmp_buffer;
+    void *page_buffer_tmp;
     std::mutex page_map_mutex;
+    std::unordered_map<uint64_t, uint64_t> frequency_map;
 };
