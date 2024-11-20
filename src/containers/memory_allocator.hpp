@@ -10,7 +10,7 @@
 #include "containers/rdma.hpp"
 #include <random>
 
-#define MAX_POOL_SIZE (uint64_t)(20) * 1024 * 1024 * 1024 // 10 GB
+#define MAX_POOL_SIZE (uint64_t)(40) * 1024 * 1024 * 1024 // 10 GB
 #define SERVER_PORT_MAIN_CACHE 5000
 
 typedef uint64_t block_id_t;

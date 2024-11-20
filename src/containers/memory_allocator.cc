@@ -39,7 +39,7 @@ MemoryPool::MemoryPool(size_t pool_size, size_t alignment)
         // std::cout << "Sleeping for " << sleep_time2 << " seconds before connecting to the next remote pool." << std::endl;
         // std::this_thread::sleep_for(std::chrono::seconds(sleep_time2));
 
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(15));
 
         const std::string &host_ip = host_info.host;
         int memory_port = host_info.memory_port;
