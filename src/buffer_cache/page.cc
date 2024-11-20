@@ -111,7 +111,7 @@ namespace alt
     {
         rassert(buf_.has());
         is_RDMA_ = true;
-        page_cache->evicter().add_to_evictable_unbacked(this);
+        page_cache->evicter().add_to_evictable_rdma(this);
     }
 
     page_t::page_t(block_id_t _block_id,
@@ -136,8 +136,8 @@ namespace alt
           access_time_(page_cache->evicter().next_access_time()),
           snapshot_refcount_(0)
     {
-        page_cache->evicter().add_not_yet_loaded(this);
         is_RDMA_ = false;
+        page_cache->evicter().add_not_yet_loaded(this);
         coro_t::spawn_now_dangerously(std::bind(&page_t::load_from_copyee,
                                                 this,
                                                 copyee,
@@ -231,7 +231,7 @@ namespace alt
                         offset = PageAllocator::memory_pool->get_offset(tmp_page_buffer);
                     }
                     page_cache->getPageMap()->updateBlockID(page->block_id_, offset);
-                    std::cout << "Updated Block ID: " << page->block_id_ << " Offset: " << offset << std::endl;
+                    // std::cout << "Updated Block ID: " << page->block_id_ << " Offset: " << offset << std::endl;
                 }
             }
         }

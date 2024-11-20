@@ -93,6 +93,11 @@ public:
     // Method to perform frequency map lookup and addition
     bool performFrequencyMapLookup(uint64_t block_id);
 
+    void cleanupFrequencyMap()
+    {
+        frequency_map.clear();
+    }
+
     void addFrequencyMapEntry(uint64_t block_id)
     {
         if (frequency_map.find(block_id) == frequency_map.end())

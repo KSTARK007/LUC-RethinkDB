@@ -263,6 +263,7 @@ namespace alt
             // std::cout << "Updating metadata for client" << std::endl;
 
             client->readMetadata();
+            client->cleanupFrequencyMap();
 
             if (client->getMetaDataTmpBuffer() == nullptr)
             {
@@ -316,6 +317,8 @@ namespace alt
         {
             read_ahead_cb_existence_ = drainer_->lock();
         }
+
+        RDMA_hits_.store(0);
 
         page_read_ahead_cb_t *local_read_ahead_cb = nullptr;
         {
@@ -498,9 +501,18 @@ namespace alt
         std::string file_name = ss.str();
         std::ofstream file;
         file.open(file_name);
+        uint64_t total_pages = 0;
         for (auto &&page : current_pages_)
         {
-            file << page.first << std::endl;
+            page_t *page_instance = page.second->page_.get_page_for_read();
+            if (page_instance != nullptr)
+            {
+                file << page.first << std::endl;
+            }
+            else
+            {
+                total_pages++;
+            }
         }
         file.close();
     }
@@ -518,9 +530,10 @@ namespace alt
                     "Expected block %" PR_BLOCK_ID " not to be deleted "
                     "(should you have used alt_create_t::create?).",
                     block_id);
-            if (RDMA_ENABLED)
+            // std::cout << "Block " << block_id << " not found in the cache. page_port " << page_map.port_number << std::endl;
+            if (RDMA_ENABLED && PRINT_LATENCY)
             {
-
+                std::cout << "RDMA ENABLED and PRINT_LATENCY is true" << std::endl;
                 std::cout << "Block " << block_id << " not found in the cache. page_port " << page_map.port_number << std::endl;
                 std::pair<RDMAClient *, size_t> tmp;
                 RDMAClient *client = nullptr;
@@ -546,6 +559,7 @@ namespace alt
 
                     if (block_data != nullptr)
                     {
+                        RDMA_hits_.fetch_add(1);
                         uint32_t ser_bs = page_size + sizeof(ls_buf_data_t); // Total serialized block size
                         block_size_t block_size = block_size_t::unsafe_make(ser_bs);
 
@@ -646,6 +660,94 @@ namespace alt
                     misses_++;
                 }
             }
+
+            if (RDMA_ENABLED && !PRINT_LATENCY)
+            {
+                // std::cout << "RDMA ENABLED and PRINT_LATENCY is false" << std::endl;
+                std::pair<RDMAClient *, size_t> tmp;
+                RDMAClient *client = nullptr;
+                size_t offset = 0;
+                if (page_map.port_number == 6001)
+                {
+                    tmp = PageAllocator::memory_pool->check_block_exists(block_id);
+                    client = tmp.first;
+                    offset = tmp.second;
+                }
+                if (client != nullptr && block_id != 0 && offset != static_cast<size_t>(-1))
+                {
+                    uint32_t page_size = max_block_size_.value();
+                    // std::cout << "Block " << block_id << " exists on remote server." << client->getIP() << std::endl;
+                    void *block_data = client->getPageFromOffset(offset, page_size);
+
+                    if (block_data != nullptr)
+                    {
+                        RDMA_hits_.fetch_add(1);
+                        uint32_t ser_bs = page_size + sizeof(ls_buf_data_t); // Total serialized block size
+                        block_size_t block_size = block_size_t::unsafe_make(ser_bs);
+
+                        buf_ptr_t buf = buf_ptr_t::alloc_uninitialized(block_size);
+                        std::memcpy(buf.cache_data(), block_data, page_size);
+
+                        buf.fill_padding_zero();
+                        current_page_t *page = new current_page_t(block_id, std::move(buf), this, true);
+                        client->addFrequencyMapEntry(block_id);
+
+                        if (client->performFrequencyMapLookup(block_id))
+                        {
+                            page_it = current_pages_.insert(page_it, std::make_pair(block_id, page));
+
+                            page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
+
+                            if (page_instance != nullptr)
+                            {
+                                void *page_buffer = page_instance->get_page_buf(this);
+
+                                if (page_buffer != nullptr)
+                                {
+                                    uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                                    page_map.add_to_map(block_id, page_offset_tmp);
+                                }
+                            }
+                            else
+                            {
+                                page_map.add_to_map(block_id, static_cast<size_t>(-1));
+                            }
+                        }
+                        return page;
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Block data unavailable for block_id " << block_id << std::endl;
+                    }
+                }
+                else
+                {
+                    //     // current_page_t *page = new current_page_t(block_id);
+                    page_it = current_pages_.insert(
+                        page_it, std::make_pair(block_id, new current_page_t(block_id)));
+                    page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
+
+                    if (page_instance != nullptr)
+                    {
+                        void *page_buffer = page_instance->get_page_buf(this);
+
+                        if (page_buffer != nullptr)
+                        {
+                            uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                            page_map.add_to_map(block_id, page_offset_tmp);
+                        }
+                        else
+                        {
+                            std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
+                        }
+                    }
+                    else
+                    {
+                        page_map.add_to_map(block_id, static_cast<size_t>(-1));
+                    }
+                    misses_++;
+                }
+            }
             else
             {
                 // current_page_t *page = new current_page_t(block_id);
@@ -678,6 +780,15 @@ namespace alt
         {
             rassert(!page_it->second->is_deleted());
         }
+
+        if (PRINT_RDMA_MISSRATE)
+        {
+            operation_count.fetch_add(1);
+            if (operation_count.load() % 10000 == 0)
+            {
+                std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
+            }
+        }
         if (PRINT_MAPS)
         {
             operation_count.fetch_add(1);
@@ -685,6 +796,7 @@ namespace alt
                 std::lock_guard<std::mutex> lock(file_number_mutex);
                 if (operation_count.load() >= 50000)
                 {
+                    std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
                     print_current_pages_to_file(page_map.file_number);
                     page_map.print_map_to_file(page_map.file_number);
                     page_map.file_number++;
@@ -1155,6 +1267,11 @@ namespace alt
         rassert(num_keepalives_ == 0);
     }
 
+    bool current_page_t::is_rdma_page()
+    {
+        return this->the_page_for_read_for_RDMA()->is_rdma_page();
+    }
+
     void current_page_t::reset(page_cache_t *page_cache)
     {
         rassert(acquirers_.empty());
@@ -1393,6 +1510,12 @@ namespace alt
     {
         guarantee(!is_deleted_);
         convert_from_serializer_if_necessary(help, account);
+        return page_.get_page_for_read();
+    }
+
+    page_t *current_page_t::the_page_for_read_for_RDMA()
+    {
+        guarantee(!is_deleted_);
         return page_.get_page_for_read();
     }
 

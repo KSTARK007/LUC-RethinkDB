@@ -2,11 +2,17 @@
 #ifndef BUFFER_CACHE_PAGE_CACHE_HPP_
 #define BUFFER_CACHE_PAGE_CACHE_HPP_
 
-// #define RDMA_ENABLED true
-#define RDMA_ENABLED false
+#define RDMA_ENABLED true
+// #define RDMA_ENABLED false
 
-#define PRINT_MAPS true
-// #define PRINT_MAPS false
+// #define PRINT_MAPS true
+#define PRINT_MAPS false
+
+// #define PRINT_LATENCY true
+#define PRINT_LATENCY false
+
+#define PRINT_RDMA_MISSRATE true
+// #define PRINT_RDMA_MISSRATE false
 
 #include <functional>
 #include <map>
@@ -116,6 +122,7 @@ namespace alt
         void reset(page_cache_t *page_cache);
 
         bool should_be_evicted() const;
+        bool is_rdma_page();
 
     private:
         // current_page_acq_t should not access our fields directly.
@@ -128,6 +135,7 @@ namespace alt
 
         page_t *the_page_for_write(current_page_help_t help, cache_account_t *account);
         page_t *the_page_for_read(current_page_help_t help, cache_account_t *account);
+        page_t *the_page_for_read_for_RDMA();
 
         // Initializes page_ if necessary, providing an account because we know we'd like
         // to load it ASAP.
@@ -359,6 +367,7 @@ namespace alt
         ~page_cache_t();
 
         size_t misses_ = 0;
+        std::atomic<size_t> RDMA_hits_;
 
         // Takes a txn to be flushed.  Calls on_flush_complete() (which resets the
         // throttler_acq parameter) when done.

@@ -36,7 +36,7 @@ public:
         }
 
         // Initialize the array to an invalid offset to indicate unused entries
-        std::fill_n(block_offset_map, MAX_METADATA_BLOCKS, static_cast<size_t>(-1));
+        std::fill_n(block_offset_map, MAX_METADATA_BLOCKS, static_cast<size_t>(-2));
 
         port_number = current_port++;
     }
@@ -62,7 +62,7 @@ public:
         }
 
         // Initialize the array to an invalid offset to indicate unused entries
-        std::fill_n(block_offset_map, MAX_METADATA_BLOCKS, static_cast<size_t>(-1));
+        std::fill_n(block_offset_map, MAX_METADATA_BLOCKS, static_cast<size_t>(-2));
     }
 
     ~PageMap()
@@ -93,9 +93,9 @@ public:
     void remove_from_map(block_id_t block_id)
     {
         std::lock_guard<std::mutex> lock(map_mutex);
-        if (block_id < MAX_METADATA_BLOCKS && block_offset_map[block_id] != static_cast<size_t>(-1))
+        if (block_id < MAX_METADATA_BLOCKS && block_offset_map[block_id] != static_cast<size_t>(-2))
         {
-            block_offset_map[block_id] = static_cast<size_t>(-1); // Reset to invalid offset
+            block_offset_map[block_id] = static_cast<size_t>(-2); // Reset to invalid offset
             // std::cout << "Removed block_id " << block_id << " from the map." << std::endl;
         }
         // else
@@ -108,7 +108,9 @@ public:
     size_t get_offset_from_map(block_id_t block_id)
     {
         std::lock_guard<std::mutex> lock(map_mutex);
-        if (block_id < MAX_METADATA_BLOCKS && block_offset_map[block_id] != static_cast<size_t>(-1))
+        if (block_id < MAX_METADATA_BLOCKS &&
+            block_offset_map[block_id] != static_cast<size_t>(-2) &&
+            block_offset_map[block_id] != static_cast<size_t>(-1))
         {
             return block_offset_map[block_id];
         }
@@ -143,14 +145,14 @@ public:
         {
             // std::cout << "block_id: " << i << std::endl;
             // std::cout << ", offset: " << block_offset_map[i] << std::endl;
-            if (block_offset_map[i] != static_cast<size_t>(-1))
+            if (block_offset_map[i] != static_cast<size_t>(-2))
             {
                 outfile << "block_id: " << i << ", offset: " << block_offset_map[i] << "\n";
             }
         }
         outfile << "--------------------------\n";
         outfile.close();
-        std::cout << "Map contents written to file." << std::endl;
+        // std::cout << "Map contents written to file." << std::endl;
     }
 
     void print_map_to_file_remote_metadata(std::string ip, size_t file_number)
@@ -177,14 +179,14 @@ public:
         {
             // std::cout << "block_id: " << i << std::endl;
             // std::cout << ", offset: " << block_offset_map[i] << std::endl;
-            if (block_offset_map[i] != static_cast<size_t>(-1))
+            if (block_offset_map[i] != static_cast<size_t>(-2))
             {
                 outfile << "block_id: " << i << ", offset: " << block_offset_map[i] << "\n";
             }
         }
         outfile << "--------------------------\n";
         outfile.close();
-        std::cout << "Map contents written to file." << std::endl;
+        // std::cout << "Map contents written to file." << std::endl;
     }
 
     void print_block_offset_map(void *new_map)
@@ -208,7 +210,7 @@ public:
         std::lock_guard<std::mutex> lock(map_mutex);
         for (block_id_t i = 0; i < MAX_METADATA_BLOCKS; ++i)
         {
-            if (tmp_map[i] != static_cast<size_t>(-1))
+            if (tmp_map[i] != static_cast<size_t>(-2))
             {
                 outfile << "block_id: " << i << ", offset: " << tmp_map[i] << std::endl;
             }
@@ -226,17 +228,20 @@ public:
     size_t isBlockIDAvailable(block_id_t block_id)
     {
         // std::lock_guard<std::mutex> lock(map_mutex);
-        if (block_offset_map[block_id] != static_cast<size_t>(-1) && block_offset_map[block_id] != 0)
+        if (block_offset_map[block_id] != static_cast<size_t>(-2) &&
+            block_id < MAX_METADATA_BLOCKS &&
+            block_offset_map[block_id] != 0)
         {
             return block_offset_map[block_id];
         }
-        return 0;
+        return static_cast<size_t>(-1);
     }
 
     bool updateBlockID(block_id_t block_id, size_t offset)
     {
         // std::lock_guard<std::mutex> lock(map_mutex);
-        if (block_offset_map[block_id] != static_cast<size_t>(-1))
+        if (block_id < MAX_METADATA_BLOCKS &&
+            block_offset_map[block_id] != static_cast<size_t>(-2))
         {
             block_offset_map[block_id] = offset;
             return true;

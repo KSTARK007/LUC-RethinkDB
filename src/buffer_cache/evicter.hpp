@@ -27,6 +27,7 @@ namespace alt
         void catch_up_deferred_load(page_t *page);
         void add_to_evictable_unbacked(page_t *page);
         void add_to_evictable_disk_backed(page_t *page);
+        void add_to_evictable_rdma(page_t *page);
         bool page_is_in_unevictable_bag(page_t *page) const;
         bool page_is_in_evicted_bag(page_t *page) const;
         void move_unevictable_to_evictable(page_t *page);
@@ -101,7 +102,7 @@ namespace alt
         eviction_bag_t evictable_disk_backed_;
         eviction_bag_t evictable_unbacked_;
         eviction_bag_t evicted_;
-        eviction_bag_t RDMA_Bag_;
+        eviction_bag_t rdma_bag_;
 
         auto_drainer_t drainer_;
 

@@ -73,7 +73,7 @@ namespace alt
         bool is_loaded() const { return buf_.has(); }
         bool is_disk_backed() const { return block_token_.has(); }
 
-        bool is_RDMA() const { return is_RDMA_; }
+        bool is_rdma_page() const { return is_RDMA_; }
 
         void set_RDMA(bool RDMA_tmp) { is_RDMA_ = RDMA_tmp; }
 
