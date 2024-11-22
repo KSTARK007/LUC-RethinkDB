@@ -72,7 +72,7 @@ def main():
                         hits = int(match.group(1))
                         misses = int(match.group(2))
                         total_rdma_hits += hits
-                        total_rdma_misses += (misses - 232575)
+                        total_rdma_misses += misses
                     else:
                         print(f"Error: RDMA stats missing in server log for {node_dir}")
                         sys.exit(1)
@@ -82,6 +82,7 @@ def main():
         else:
             print(f"Error: Missing server_logs for {node_dir}")
             sys.exit(1)
+    total_rdma_misses = total_rdma_misses  - 232575
 
     # Read current_pages_output files and extract keys
     integer_sets = []
@@ -130,7 +131,7 @@ def main():
 
     with open(csv_file, 'a') as f:
         if not csv_exists:
-            f.write("Cache Size,Total Throughput,Avg Latency,RDMA Hits,RDMA Misses,Similarity,Sorensen Similarity\n")
+            f.write("Cache Size,Total Throughput,Avg Latency,RDMA Hits,Misses,Similarity,Sorensen Similarity\n")
         f.write(f"{CACHE_SIZE},{total_throughput},{avg_latency},{total_rdma_hits},{total_rdma_misses},{similarity},{sorensen_similarity}\n")
 
     print(f"Results for Cache Size {CACHE_SIZE}, Workload {WORKLOAD_TYPE}, and IO Thread {IO_THREAD_DIR}:")
