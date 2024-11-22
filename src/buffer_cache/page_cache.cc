@@ -784,27 +784,30 @@ namespace alt
         if (PRINT_RDMA_MISSRATE)
         {
             operation_count.fetch_add(1);
-            if (operation_count.load() % 10000 == 0)
+            if (operation_count.load() % 500000 == 0)
             {
                 std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
             }
         }
         if (PRINT_MAPS)
         {
-            operation_count.fetch_add(1);
+            // if (!PRINT_RDMA_MISSRATE)
+            // {
+            //     operation_count.fetch_add(1);
+            // }
             {
                 std::lock_guard<std::mutex> lock(file_number_mutex);
-                if (operation_count.load() >= 50000)
+                if (operation_count.load() >= 1000000)
                 {
-                    std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
+                    // std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
                     print_current_pages_to_file(page_map.file_number);
-                    page_map.print_map_to_file(page_map.file_number);
+                    // page_map.print_map_to_file(page_map.file_number);
                     page_map.file_number++;
                     operation_count.store(0);
-                    for (RDMAClient *client : PageAllocator::memory_pool->RemoteMetadata)
-                    {
-                        client->getPageMap()->print_map_to_file_remote_metadata(client->getIP(), client->getPageMap()->file_number++);
-                    }
+                    // for (RDMAClient *client : PageAllocator::memory_pool->RemoteMetadata)
+                    // {
+                    //     client->getPageMap()->print_map_to_file_remote_metadata(client->getIP(), client->getPageMap()->file_number++);
+                    // }
                 }
             }
         }

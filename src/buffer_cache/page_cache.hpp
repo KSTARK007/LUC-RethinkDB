@@ -5,8 +5,8 @@
 #define RDMA_ENABLED true
 // #define RDMA_ENABLED false
 
-// #define PRINT_MAPS true
-#define PRINT_MAPS false
+#define PRINT_MAPS true
+// #define PRINT_MAPS false
 
 // #define PRINT_LATENCY true
 #define PRINT_LATENCY false
