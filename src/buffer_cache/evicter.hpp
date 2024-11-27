@@ -38,6 +38,9 @@ namespace alt
         void remove_page(page_t *page);
         void reloading_page(page_t *page);
 
+        void remove_out_of_range_pages_periodically();
+        void remove_non_leaf_before_read();
+
         // Evicter will be unusable until initialize is called
         evicter_t();
         ~evicter_t();

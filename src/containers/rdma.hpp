@@ -9,10 +9,10 @@
 #include <random>
 
 #define CLIENT_BUFFER_SIZE (64 * 1024) // 64 KB buffer size
-#define MAX_METADATA_BLOCKS 100000
+#define MAX_METADATA_BLOCKS 77700
 #define ACTUAL_DATA_BLOCKS 8000
 
-#define RDMA_TO_LOCAL_FREQUENCY 100
+#define RDMA_TO_LOCAL_FREQUENCY 500
 
 class PageMap;
 class RDMAServer

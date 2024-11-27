@@ -14,6 +14,10 @@
 #define PRINT_RDMA_MISSRATE true
 // #define PRINT_RDMA_MISSRATE false
 
+#define MAX_DISK_READ_BEFORE_ADMIT 100
+
+#define MAX_BLOCKS 77650
+
 #include <functional>
 #include <map>
 #include <set>
@@ -38,6 +42,7 @@
 #include "containers/page_metadata.hpp"
 #include "repli_timestamp.hpp"
 #include "serializer/types.hpp"
+#include "btree/node.hpp"
 
 class alt_txn_throttler_t;
 class cache_balancer_t;
@@ -124,6 +129,8 @@ namespace alt
         bool should_be_evicted() const;
         bool is_rdma_page();
 
+        page_t *the_page_for_read_for_RDMA();
+
     private:
         // current_page_acq_t should not access our fields directly.
         friend class current_page_acq_t;
@@ -135,7 +142,6 @@ namespace alt
 
         page_t *the_page_for_write(current_page_help_t help, cache_account_t *account);
         page_t *the_page_for_read(current_page_help_t help, cache_account_t *account);
-        page_t *the_page_for_read_for_RDMA();
 
         // Initializes page_ if necessary, providing an account because we know we'd like
         // to load it ASAP.
@@ -358,6 +364,15 @@ namespace alt
 
     class page_cache_index_write_sink_t;
 
+    struct Block_info
+    {
+        bool is_leaf;
+        size_t hits;
+        size_t misses;
+        size_t RDMA_hit;
+        size_t total_accesses;
+    };
+
     class page_cache_t : public home_thread_mixin_t
     {
     public:
@@ -366,8 +381,112 @@ namespace alt
                      alt_txn_throttler_t *throttler);
         ~page_cache_t();
 
+        int get_node_id();
+
+        bool check_if_node_in_range(u_int64_t block_id);
+
+        std::unordered_map<block_id_t, Block_info> block_info_map;
+        void print_block_info_map(size_t file_number);
+        void update_block_info_map(block_id_t block_id, bool is_leaf, bool hit, bool miss, bool RDMA_hit);
+        bool check_block_info_map_if_leaf(block_id_t block_id);
+
+        std::unordered_map<block_id_t, bool> leaf_map;
+        void update_leaf_map(block_id_t block_id, bool is_leaf);
+        void print_leaf_map(size_t file_number);
+        bool check_leaf_map_if_leaf(block_id_t block_id);
+
+        std::unordered_map<block_id_t, size_t> perf_map;
+        bool should_admit_block(block_id_t block_id);
+        void update_perf_map(block_id_t block_id);
+
         size_t misses_ = 0;
         std::atomic<size_t> RDMA_hits_;
+
+        size_t rdma_access_rate_hit = 0;
+        bool clean_up_after_writes = false;
+        bool should_clean_up = false;
+
+        uint64_t start_range;
+        uint64_t end_range;
+
+        uint64_t rdma_bag;
+        uint64_t unevictable_bag;
+        uint64_t evicted_bag;
+        uint64_t evictable_disk_backed_bag;
+        uint64_t evictable_unbacked_bag;
+        uint64_t internal_pages;
+
+        void reset_counter()
+        {
+            rdma_bag = 0;
+            unevictable_bag = 0;
+            evicted_bag = 0;
+            evictable_disk_backed_bag = 0;
+            evictable_unbacked_bag = 0;
+            internal_pages = 0;
+        }
+
+        std::vector<uint64_t> RDMA_latency;
+
+        uint64_t avg_rdma_latency()
+        {
+            uint64_t sum = 0;
+            for (auto &latency : RDMA_latency)
+            {
+                sum += latency;
+            }
+            auto avg = sum / RDMA_latency.size();
+            RDMA_latency.clear();
+            return avg;
+        }
+
+        void update_cache_page(page_t *page_instance, block_id_t block_id)
+        {
+            if (page_instance != nullptr)
+            {
+                void *page_buffer = page_instance->get_page_buf(this);
+
+                if (page_buffer != nullptr)
+                {
+                    uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
+                    page_map.add_to_map(block_id, page_offset_tmp);
+                }
+                else
+                {
+                    std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
+                }
+            }
+            else
+            {
+                page_map.add_to_map(block_id, static_cast<size_t>(-1));
+            }
+        }
+
+        std::unordered_map<block_id_t, current_page_t *> getCurrentPages()
+        {
+            return current_pages_;
+        }
+
+        bool check_if_internal_page(page_t *page_instance)
+        {
+            if (page_instance == nullptr)
+            {
+                return false;
+            }
+            const node_t *node = static_cast<const node_t *>(page_instance->get_page_buf(this));
+            return node::is_internal(node);
+        }
+
+        bool check_if_internal_page(void *data)
+        {
+            const node_t *node = static_cast<const node_t *>(data);
+            return node::is_internal(node);
+        }
+
+        bool check_if_block_duplicate(block_id_t block_id)
+        {
+            return PageAllocator::memory_pool->check_if_block_duplicate(block_id);
+        }
 
         // Takes a txn to be flushed.  Calls on_flush_complete() (which resets the
         // throttler_acq parameter) when done.

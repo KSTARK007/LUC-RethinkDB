@@ -241,6 +241,22 @@ namespace alt
         read_ahead_cb_existence_.reset();
     }
 
+    int page_cache_t::get_node_id()
+    {
+        std::string tmp = PageAllocator::memory_pool->configs->my_ip;
+        std::string node_id = tmp.substr(tmp.find_last_of('.') + 1);
+        return std::stoi(node_id);
+    }
+
+    bool page_cache_t::check_if_node_in_range(u_int64_t block_id)
+    {
+        if (block_id >= start_range && block_id <= end_range)
+        {
+            return true;
+        }
+        return false;
+    }
+
     class page_cache_index_write_sink_t
     {
     public:
@@ -263,7 +279,7 @@ namespace alt
             // std::cout << "Updating metadata for client" << std::endl;
 
             client->readMetadata();
-            client->cleanupFrequencyMap();
+            // client->cleanupFrequencyMap();
 
             if (client->getMetaDataTmpBuffer() == nullptr)
             {
@@ -271,10 +287,12 @@ namespace alt
                 break;
             }
 
-            client->updateMetaDataBuffer();
-            client->getPageMap()->update_block_offset_map(client->getMetaDataTmpBuffer());
+            // client->updateMetaDataBuffer();
+            client->getPageMap()->update_block_offset_map(client->getMetaDataBuffer());
 
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            // std::this_thread::sleep_for(std::chrono::microseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            // std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         // while (true)
         // {
@@ -319,6 +337,23 @@ namespace alt
         }
 
         RDMA_hits_.store(0);
+        int node_id = get_node_id();
+        std::cout << "Node ID: " << node_id << std::endl;
+        if (node_id == 1)
+        {
+            start_range = 0;
+            end_range = static_cast<int>(1.0 / 3 * MAX_BLOCKS);
+        }
+        else if (node_id == 2)
+        {
+            start_range = static_cast<int>(1.0 / 3 * MAX_BLOCKS) + 1;
+            end_range = static_cast<int>(2.0 / 3 * MAX_BLOCKS);
+        }
+        else if (node_id == 3)
+        {
+            start_range = static_cast<int>(2.0 / 3 * MAX_BLOCKS) + 1;
+            end_range = MAX_BLOCKS;
+        }
 
         page_read_ahead_cb_t *local_read_ahead_cb = nullptr;
         {
@@ -494,6 +529,121 @@ namespace alt
         txn->flush_complete_cond_.pulse();
     }
 
+    bool page_cache_t::check_block_info_map_if_leaf(block_id_t block_id)
+    {
+        if (block_info_map.find(block_id) == block_info_map.end())
+        {
+            return false;
+        }
+        return block_info_map[block_id].is_leaf;
+    }
+
+    void page_cache_t::update_block_info_map(block_id_t block_id, bool is_leaf, bool hit, bool miss, bool RDMA_hit)
+    {
+        if (block_info_map.find(block_id) == block_info_map.end())
+        {
+            Block_info block_info;
+            block_info.is_leaf = is_leaf;
+            block_info.hits = 0;
+            block_info.misses = 0;
+            block_info.RDMA_hit = 0;
+            block_info_map[block_id] = block_info;
+        }
+        if (hit)
+        {
+            block_info_map[block_id].hits++;
+        }
+        if (miss)
+        {
+            block_info_map[block_id].misses++;
+        }
+        if (RDMA_hit)
+        {
+            block_info_map[block_id].RDMA_hit++;
+        }
+        if (is_leaf)
+        {
+            block_info_map[block_id].is_leaf = true;
+        }
+        if (hit || miss || RDMA_hit)
+        {
+            block_info_map[block_id].total_accesses++;
+        }
+    }
+
+    void page_cache_t::print_block_info_map(size_t file_number)
+    {
+        std::stringstream ss;
+        ss << "block_info_output" << file_number << ".txt";
+        std::string file_name = ss.str();
+        std::ofstream file;
+        file.open(file_name);
+        file << "Block_id, is_leaf, hits, misses, RDMA_hit, Total_access" << std::endl;
+        for (auto block : block_info_map)
+        {
+            file << block.first << " " << block.second.is_leaf << " " << block.second.hits << " "
+                 << block.second.misses << " " << block.second.RDMA_hit << " " << block.second.total_accesses << std::endl;
+        }
+        file.close();
+    }
+
+    bool page_cache_t::check_leaf_map_if_leaf(block_id_t block_id)
+    {
+        if (leaf_map.find(block_id) == leaf_map.end())
+        {
+            return false;
+        }
+        if (block_id == 0 || block_id == 1 || block_id == 2 || block_id == 3)
+        {
+            return true;
+        }
+        return leaf_map[block_id];
+    }
+
+    void page_cache_t::update_leaf_map(block_id_t block_id, bool is_leaf)
+    {
+        leaf_map[block_id] = is_leaf;
+    }
+
+    void page_cache_t::print_leaf_map(size_t file_number)
+    {
+        std::stringstream ss;
+        ss << "leaf_map_output" << file_number << ".txt";
+        std::string file_name = ss.str();
+        std::ofstream file;
+        file.open(file_name);
+        file << "Block_id is_leaf" << std::endl;
+        for (auto leaf : leaf_map)
+        {
+            file << leaf.first << std::endl;
+        }
+        file.close();
+    }
+
+    bool page_cache_t::should_admit_block(block_id_t block_id)
+    {
+        if (perf_map.find(block_id) == perf_map.end())
+        {
+            return false;
+        }
+        if (perf_map[block_id] > MAX_DISK_READ_BEFORE_ADMIT)
+        {
+            return true;
+        }
+    }
+
+    void page_cache_t::update_perf_map(block_id_t block_id)
+    {
+        if (perf_map.find(block_id) == perf_map.end())
+        {
+            perf_map[block_id] = 1;
+        }
+        else
+        {
+            perf_map[block_id] += 1;
+        }
+    }
+
     void page_cache_t::print_current_pages_to_file(size_t file_number)
     {
         std::stringstream ss;
@@ -502,11 +652,43 @@ namespace alt
         std::ofstream file;
         file.open(file_name);
         uint64_t total_pages = 0;
+        reset_counter();
         for (auto &&page : current_pages_)
         {
             page_t *page_instance = page.second->page_.get_page_for_read();
             if (page_instance != nullptr)
             {
+                if (page_instance->is_loaded())
+                {
+                    if (check_if_internal_page(page_instance))
+                    {
+                        internal_pages++;
+                        update_leaf_map(page.first, true);
+                        update_block_info_map(page.first, check_if_internal_page(page_instance), false, false, false);
+                    }
+                }
+                if (page_instance->is_rdma_page())
+                {
+                    rdma_bag++;
+                    // continue;
+                }
+                else if (page_instance->is_loading() || page_instance->has_waiters())
+                {
+                    unevictable_bag++;
+                }
+                else if (!page_instance->is_loaded())
+                {
+                    evicted_bag++;
+                }
+                else if (page_instance->is_disk_backed())
+                {
+                    evictable_disk_backed_bag++;
+                }
+                else
+                {
+                    evictable_unbacked_bag++;
+                }
+
                 file << page.first << std::endl;
             }
             else
@@ -530,6 +712,7 @@ namespace alt
                     "Expected block %" PR_BLOCK_ID " not to be deleted "
                     "(should you have used alt_create_t::create?).",
                     block_id);
+            update_perf_map(block_id);
             // std::cout << "Block " << block_id << " not found in the cache. page_port " << page_map.port_number << std::endl;
             if (RDMA_ENABLED && PRINT_LATENCY)
             {
@@ -667,6 +850,7 @@ namespace alt
                 std::pair<RDMAClient *, size_t> tmp;
                 RDMAClient *client = nullptr;
                 size_t offset = 0;
+                auto begin = std::chrono::steady_clock::now();
                 if (page_map.port_number == 6001)
                 {
                     tmp = PageAllocator::memory_pool->check_block_exists(block_id);
@@ -691,28 +875,26 @@ namespace alt
                         buf.fill_padding_zero();
                         current_page_t *page = new current_page_t(block_id, std::move(buf), this, true);
                         client->addFrequencyMapEntry(block_id);
+                        bool internal_page = check_if_internal_page(block_data);
 
-                        if (client->performFrequencyMapLookup(block_id))
+                        // if (client->performFrequencyMapLookup(block_id) || internal_page)
+                        if (check_if_node_in_range(block_id) || internal_page)
                         {
+
                             page_it = current_pages_.insert(page_it, std::make_pair(block_id, page));
 
                             page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
 
-                            if (page_instance != nullptr)
-                            {
-                                void *page_buffer = page_instance->get_page_buf(this);
+                            update_cache_page(page_instance, block_id);
 
-                                if (page_buffer != nullptr)
-                                {
-                                    uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
-                                    page_map.add_to_map(block_id, page_offset_tmp);
-                                }
-                            }
-                            else
+                            if (internal_page)
                             {
-                                page_map.add_to_map(block_id, static_cast<size_t>(-1));
+                                update_leaf_map(block_id, true);
                             }
                         }
+                        auto end = std::chrono::steady_clock::now();
+                        RDMA_latency.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count());
+                        update_block_info_map(block_id, internal_page, false, false, true);
                         return page;
                     }
                     else
@@ -722,30 +904,18 @@ namespace alt
                 }
                 else
                 {
-                    //     // current_page_t *page = new current_page_t(block_id);
-                    page_it = current_pages_.insert(
-                        page_it, std::make_pair(block_id, new current_page_t(block_id)));
-                    page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
-
-                    if (page_instance != nullptr)
+                    auto tmp = new current_page_t(block_id);
+                    // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id))
+                    if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id))
                     {
-                        void *page_buffer = page_instance->get_page_buf(this);
-
-                        if (page_buffer != nullptr)
-                        {
-                            uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
-                            page_map.add_to_map(block_id, page_offset_tmp);
-                        }
-                        else
-                        {
-                            std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
-                        }
-                    }
-                    else
-                    {
-                        page_map.add_to_map(block_id, static_cast<size_t>(-1));
+                        page_it = current_pages_.insert(
+                            page_it, std::make_pair(block_id, tmp));
+                        page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
+                        update_cache_page(page_instance, block_id);
                     }
                     misses_++;
+                    update_block_info_map(block_id, false, false, true, false);
+                    return tmp;
                 }
             }
             else
@@ -754,38 +924,43 @@ namespace alt
                 page_it = current_pages_.insert(
                     page_it, std::make_pair(block_id, new current_page_t(block_id)));
                 page_t *page_instance = page_it->second->page_.get_page_for_read();
-
-                if (page_instance != nullptr)
-                {
-                    void *page_buffer = page_instance->get_page_buf(this);
-
-                    if (page_buffer != nullptr)
-                    {
-                        uint64_t page_offset_tmp = PageAllocator::memory_pool->get_offset(page_buffer);
-                        page_map.add_to_map(block_id, page_offset_tmp);
-                    }
-                    else
-                    {
-                        std::cerr << "Error: Buffer data unavailable for block_id " << block_id << std::endl;
-                    }
-                }
-                else
-                {
-                    page_map.add_to_map(block_id, static_cast<size_t>(-1));
-                }
+                update_cache_page(page_instance, block_id);
                 misses_++;
+                update_block_info_map(block_id, false, false, true, false);
             }
         }
         else
         {
+            page_t *page_instance = page_it->second->page_.get_page_for_read();
+            if (page_instance->is_loaded())
+            {
+                if (check_if_internal_page(page_instance))
+                {
+                    update_leaf_map(block_id, true);
+                    update_block_info_map(block_id, true, false, false, false);
+                }
+            }
+            update_block_info_map(block_id, false, true, false, false);
             rassert(!page_it->second->is_deleted());
         }
 
         if (PRINT_RDMA_MISSRATE)
         {
-            operation_count.fetch_add(1);
-            if (operation_count.load() % 500000 == 0)
+            if (misses_ > 77700 && !clean_up_after_writes)
             {
+                evicter_.remove_non_leaf_before_read();
+                clean_up_after_writes = true;
+            }
+            operation_count.fetch_add(1);
+            if (operation_count.load() % 1000000 == 0)
+            {
+                // evicter_.remove_out_of_range_pages_periodically();
+                std::cout
+                    << "RDMA bags: " << rdma_bag << " Unevictable bags: "
+                    << unevictable_bag << " Evicted bags: " << evicted_bag
+                    << " Evictable disk backed bags: " << evictable_disk_backed_bag
+                    << " Evictable unbacked bags: " << evictable_unbacked_bag << std::endl;
+                std::cout << "RDMA Latency: " << avg_rdma_latency() << std::endl;
                 std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
             }
         }
@@ -801,6 +976,8 @@ namespace alt
                 {
                     // std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
                     print_current_pages_to_file(page_map.file_number);
+                    print_block_info_map(page_map.file_number);
+                    print_leaf_map(page_map.file_number);
                     // page_map.print_map_to_file(page_map.file_number);
                     page_map.file_number++;
                     operation_count.store(0);

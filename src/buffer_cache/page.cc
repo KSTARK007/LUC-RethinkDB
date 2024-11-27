@@ -231,6 +231,10 @@ namespace alt
                         offset = PageAllocator::memory_pool->get_offset(tmp_page_buffer);
                     }
                     page_cache->getPageMap()->updateBlockID(page->block_id_, offset);
+                    if (page_cache->check_if_internal_page(page))
+                    {
+                        page_cache->update_block_info_map(page->block_id_, true, false, false, false);
+                    }
                     // std::cout << "Updated Block ID: " << page->block_id_ << " Offset: " << offset << std::endl;
                 }
             }

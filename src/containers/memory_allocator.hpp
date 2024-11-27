@@ -10,7 +10,7 @@
 #include "containers/rdma.hpp"
 #include <random>
 
-#define MAX_POOL_SIZE (uint64_t)(40) * 1024 * 1024 * 1024 // 10 GB
+#define MAX_POOL_SIZE (uint64_t)(55) * 1024 * 1024 * 1024 // 10 GB
 #define SERVER_PORT_MAIN_CACHE 5000
 
 typedef uint64_t block_id_t;
@@ -36,6 +36,8 @@ public:
     void populate_block();
 
     std::pair<RDMAClient *, size_t> check_block_exists(block_id_t block_id);
+
+    bool check_if_block_duplicate(block_id_t block_id);
 
     void *get_buffer_from_offset(RDMAClient *client, uint64_t offset, size_t size);
 

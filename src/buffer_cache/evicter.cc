@@ -292,6 +292,97 @@ namespace alt
         evict_if_necessary_active_ = false;
     }
 
+    void evicter_t::remove_out_of_range_pages_periodically()
+    {
+        assert_thread();
+        guarantee(initialized_);
+        std::cout << "Starting periodic eviction" << std::endl;
+        for (auto &&page_ : page_cache_->getCurrentPages())
+        {
+            uint64_t i = page_.first;
+            // std::cout << "Checking page with block_id: " << i << std::endl;
+            if (page_cache_->check_if_block_duplicate(i))
+            {
+                // auto it = page_cache_->getCurrentPages().find(i);
+                // if (it == page_cache_->getCurrentPages().end())
+                // {
+                //     continue;
+                // }
+                // page_t *page = it->second->the_page_for_read_for_RDMA();
+                page_t *page = page_.second->the_page_for_read_for_RDMA();
+                if (page->is_loaded())
+                {
+                    if (page->is_rdma_page())
+                    {
+                        continue;
+                    }
+                    if (page_cache_->check_if_internal_page(page))
+                    {
+                        continue;
+                    }
+                    if (page->block_id() >= 0 && page->block_id() <= 2)
+                    {
+                        continue;
+                    }
+                    if (evictable_disk_backed_.has_page(page))
+                    {
+                        evictable_disk_backed_.remove(page, page->hypothetical_memory_usage(page_cache_));
+                        if (page->block_token().has())
+                        {
+                            evicted_.add(page, page->hypothetical_memory_usage(page_cache_));
+                        }
+                        page->evict_self(page_cache_);
+                        page_cache_->consider_evicting_current_page(page->block_id());
+                    }
+                }
+            }
+        }
+        std::cout << "Periodic Eviction done" << std::endl;
+        page_cache_->print_current_pages_to_file(page_cache_->getPageMap()->file_number);
+        page_cache_->getPageMap()->file_number++;
+    }
+
+    void evicter_t::remove_non_leaf_before_read()
+    {
+        assert_thread();
+        guarantee(initialized_);
+        std::cout << "Starting eviction" << std::endl;
+        for (auto &&page_ : page_cache_->getCurrentPages())
+        {
+            uint64_t i = page_.first;
+            // std::cout << "Checking page with block_id: " << i << std::endl;
+            page_t *page = page_.second->the_page_for_read_for_RDMA();
+            // if (page->is_loaded() && !page_cache_->check_if_node_in_range(page->block_id()))
+            if (page->is_loaded())
+            {
+                if (page->is_rdma_page())
+                {
+                    continue;
+                }
+                if (page->is_loaded())
+                {
+                    if (page_cache_->check_if_internal_page(page))
+                    {
+                        continue;
+                    }
+                }
+                if (evictable_disk_backed_.has_page(page))
+                {
+                    evictable_disk_backed_.remove(page, page->hypothetical_memory_usage(page_cache_));
+                    if (page->block_token().has())
+                    {
+                        evicted_.add(page, page->hypothetical_memory_usage(page_cache_));
+                    }
+                    page->evict_self(page_cache_);
+                    page_cache_->consider_evicting_current_page(page->block_id());
+                }
+            }
+        }
+        std::cout << "Eviction done" << std::endl;
+        page_cache_->print_current_pages_to_file(page_cache_->getPageMap()->file_number);
+        page_cache_->getPageMap()->file_number++;
+    }
+
     usage_adjuster_t::usage_adjuster_t(page_cache_t *page_cache, page_t *page)
         : page_cache_(page_cache),
           page_(page),

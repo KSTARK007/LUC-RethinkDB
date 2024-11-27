@@ -4,6 +4,7 @@
 
 #include "buffer_cache/page.hpp"
 #include "random.hpp"
+#include "buffer_cache/page_cache.hpp"
 #include "utils.hpp"
 
 namespace alt
@@ -48,6 +49,34 @@ namespace alt
         return bag_.has_element(page);
     }
 
+    // bool eviction_bag_t::remove_oldish(page_t **page_out, uint64_t access_time_offset,
+    //                                    page_cache_t *page_cache)
+    // {
+    //     if (bag_.size() == 0)
+    //     {
+    //         return false;
+    //     }
+    //     else
+    //     {
+    //         const size_t num_randoms = 5;
+    //         page_t *oldest = bag_.access_random(randsize(bag_.size()));
+    //         for (size_t i = 1; i < num_randoms; ++i)
+    //         {
+    //             page_t *page = bag_.access_random(randsize(bag_.size()));
+    //             // We compare relative to the access time offset, so that in the unlikely
+    //             // event of a 64-bit overflow, performance degradation is "smooth".
+    //             if (access_time_offset - page->access_time() >
+    //                 access_time_offset - oldest->access_time())
+    //             {
+    //                 oldest = page;
+    //             }
+    //         }
+
+    //         remove(oldest, oldest->hypothetical_memory_usage(page_cache));
+    //         *page_out = oldest;
+    //         return true;
+    //     }
+    // }
     bool eviction_bag_t::remove_oldish(page_t **page_out, uint64_t access_time_offset,
                                        page_cache_t *page_cache)
     {
@@ -62,6 +91,14 @@ namespace alt
             for (size_t i = 1; i < num_randoms; ++i)
             {
                 page_t *page = bag_.access_random(randsize(bag_.size()));
+                if (page_cache->check_if_node_in_range(page->block_id()))
+                {
+                    continue;
+                }
+                if (page_cache->check_leaf_map_if_leaf(page->block_id()))
+                {
+                    continue;
+                }
                 // We compare relative to the access time offset, so that in the unlikely
                 // event of a 64-bit overflow, performance degradation is "smooth".
                 if (access_time_offset - page->access_time() >

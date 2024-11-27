@@ -77,7 +77,7 @@ public:
     // Add an entry to the map
     void add_to_map(block_id_t block_id, size_t offset)
     {
-        std::lock_guard<std::mutex> lock(map_mutex);
+        // std::lock_guard<std::mutex> lock(map_mutex);
         if (block_id < MAX_METADATA_BLOCKS)
         {
             block_offset_map[block_id] = offset;
@@ -92,7 +92,8 @@ public:
     // Remove an entry from the map
     void remove_from_map(block_id_t block_id)
     {
-        std::lock_guard<std::mutex> lock(map_mutex);
+        // return;
+        // std::lock_guard<std::mutex> lock(map_mutex);
         if (block_id < MAX_METADATA_BLOCKS && block_offset_map[block_id] != static_cast<size_t>(-2))
         {
             block_offset_map[block_id] = static_cast<size_t>(-2); // Reset to invalid offset
@@ -107,7 +108,7 @@ public:
     // Retrieve the offset for a given block_id
     size_t get_offset_from_map(block_id_t block_id)
     {
-        std::lock_guard<std::mutex> lock(map_mutex);
+        // std::lock_guard<std::mutex> lock(map_mutex);
         if (block_id < MAX_METADATA_BLOCKS &&
             block_offset_map[block_id] != static_cast<size_t>(-2) &&
             block_offset_map[block_id] != static_cast<size_t>(-1))
@@ -217,13 +218,28 @@ public:
         }
     }
 
-    void update_block_offset_map(void **new_map)
+    // void update_block_offset_map(void **new_map)
+    // {
+    //     // std::lock_guard<std::mutex> lock(map_mutex);
+    //     void *temp = block_offset_map;
+    //     block_offset_map = static_cast<size_t *>(*new_map);
+    //     *new_map = temp;
+    // }
+    void update_block_offset_map(void *new_map)
     {
-        std::lock_guard<std::mutex> lock(map_mutex);
-        void *temp = block_offset_map;
-        block_offset_map = static_cast<size_t *>(*new_map);
-        *new_map = temp;
+        // std::lock_guard<std::mutex> lock(map_mutex);
+        // void *temp = block_offset_map;
+        for (int i = 0; i < MAX_METADATA_BLOCKS; i++)
+        {
+            block_offset_map[i] = (static_cast<size_t *>(new_map))[i];
+        }
     }
+
+    // void update_block_offset_map(void *new_map)
+    // {
+    //     // std::lock_guard<std::mutex> lock(map_mutex);
+    //     memcpy(block_offset_map, new_map, MAX_METADATA_BLOCKS * sizeof(size_t));
+    // }
 
     size_t isBlockIDAvailable(block_id_t block_id)
     {

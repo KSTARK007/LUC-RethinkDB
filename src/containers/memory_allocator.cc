@@ -39,7 +39,7 @@ MemoryPool::MemoryPool(size_t pool_size, size_t alignment)
         // std::cout << "Sleeping for " << sleep_time2 << " seconds before connecting to the next remote pool." << std::endl;
         // std::this_thread::sleep_for(std::chrono::seconds(sleep_time2));
 
-        std::this_thread::sleep_for(std::chrono::seconds(15));
+        std::this_thread::sleep_for(std::chrono::seconds(30));
 
         const std::string &host_ip = host_info.host;
         int memory_port = host_info.memory_port;
@@ -239,6 +239,28 @@ std::pair<RDMAClient *, size_t> MemoryPool::check_block_exists(block_id_t block_
         }
     }
     return std::make_pair(nullptr, 0);
+}
+
+bool MemoryPool::check_if_block_duplicate(block_id_t block_id)
+{
+    uint64_t offset = 0;
+    std::lock_guard<std::mutex> lock(pool_mutex); // Ensure thread-safe access
+
+    for (RDMAClient *meta_data_client : RemoteMetadata)
+    {
+        // std::cout << "Checking block " << block_id << " on remote server with ip" << meta_data_client->getIP() << std::endl;
+        if (meta_data_client->getPageMap() == nullptr)
+        {
+            std::cerr << "Page map is null for meta_data_client." << std::endl;
+            continue;
+        }
+        size_t block_offset = meta_data_client->getPageMap()->isBlockIDAvailable(block_id);
+        if (block_offset != static_cast<size_t>(-1))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 void *get_buffer_from_offset(RDMAClient *client, uint64_t offset, size_t size)
