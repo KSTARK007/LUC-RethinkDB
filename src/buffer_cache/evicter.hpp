@@ -65,6 +65,8 @@ namespace alt
 
         uint64_t in_memory_size() const;
 
+        void print_all_bag_sizes();
+
         // This is decremented past UINT64_MAX to force code to be aware of access time
         // rollovers.
         static const uint64_t INITIAL_ACCESS_TIME = UINT64_MAX - 100;

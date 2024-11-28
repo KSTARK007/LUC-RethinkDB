@@ -877,10 +877,9 @@ namespace alt
                         client->addFrequencyMapEntry(block_id);
                         bool internal_page = check_if_internal_page(block_data);
 
-                        // if (client->performFrequencyMapLookup(block_id) || internal_page)
-                        if (check_if_node_in_range(block_id) || internal_page)
+                        // if (check_if_node_in_range(block_id) || internal_page)
+                        if (client->performFrequencyMapLookup(block_id) || internal_page)
                         {
-
                             page_it = current_pages_.insert(page_it, std::make_pair(block_id, page));
 
                             page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
@@ -905,8 +904,8 @@ namespace alt
                 else
                 {
                     auto tmp = new current_page_t(block_id);
-                    // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id))
-                    if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id))
+                    // if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id))
+                    if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id))
                     {
                         page_it = current_pages_.insert(
                             page_it, std::make_pair(block_id, tmp));
@@ -955,12 +954,19 @@ namespace alt
             if (operation_count.load() % 1000000 == 0)
             {
                 // evicter_.remove_out_of_range_pages_periodically();
+                // client->cleanupFrequencyMap();
                 std::cout
                     << "RDMA bags: " << rdma_bag << " Unevictable bags: "
                     << unevictable_bag << " Evicted bags: " << evicted_bag
                     << " Evictable disk backed bags: " << evictable_disk_backed_bag
                     << " Evictable unbacked bags: " << evictable_unbacked_bag << std::endl;
                 std::cout << "RDMA Latency: " << avg_rdma_latency() << std::endl;
+                std::cout << "load_with_block_id_: " << load_with_block_id_ << " load_using_block_token_: "
+                          << load_using_block_token_ << " finish_load_with_block_id_: "
+                          << finish_load_with_block_id_ << " catch_up_with_deferred_load_: "
+                          << catch_up_with_deferred_load_ << " is_pages_not_in_cache_: "
+                          << is_pages_not_in_cache_ << std::endl;
+                evicter_.print_all_bag_sizes();
                 std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
             }
         }

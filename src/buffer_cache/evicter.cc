@@ -235,7 +235,11 @@ namespace alt
         }
         else if (page->is_disk_backed())
         {
-            return &evictable_disk_backed_;
+            if (page_cache_->check_if_in_current_pages(page->block_id()))
+            {
+                return &evictable_disk_backed_;
+            }
+            return &rdma_bag_;
         }
         else
         {
@@ -381,6 +385,14 @@ namespace alt
         std::cout << "Eviction done" << std::endl;
         page_cache_->print_current_pages_to_file(page_cache_->getPageMap()->file_number);
         page_cache_->getPageMap()->file_number++;
+    }
+
+    void evicter_t::print_all_bag_sizes()
+    {
+        std::cout << "RDMA bags: " << rdma_bag_.size() / 4096 << " Unevictable bags: "
+                  << unevictable_.size() / 4096 << " Evicted bags: " << evicted_.size() / 4096
+                  << " Evictable disk backed bags: " << evictable_disk_backed_.size() / 4096
+                  << " Evictable unbacked bags: " << evictable_unbacked_.size() / 4096 << std::endl;
     }
 
     usage_adjuster_t::usage_adjuster_t(page_cache_t *page_cache, page_t *page)

@@ -416,6 +416,12 @@ namespace alt
         uint64_t evictable_unbacked_bag;
         uint64_t internal_pages;
 
+        uint64_t load_with_block_id_ = 0;
+        uint64_t load_using_block_token_ = 0;
+        uint64_t finish_load_with_block_id_ = 0;
+        uint64_t catch_up_with_deferred_load_ = 0;
+        uint64_t is_pages_not_in_cache_ = 0;
+
         void reset_counter()
         {
             rdma_bag = 0;
@@ -424,6 +430,12 @@ namespace alt
             evictable_disk_backed_bag = 0;
             evictable_unbacked_bag = 0;
             internal_pages = 0;
+
+            load_with_block_id_ = 0;
+            load_using_block_token_ = 0;
+            finish_load_with_block_id_ = 0;
+            catch_up_with_deferred_load_ = 0;
+            is_pages_not_in_cache_ = 0;
         }
 
         std::vector<uint64_t> RDMA_latency;
@@ -438,6 +450,15 @@ namespace alt
             auto avg = sum / RDMA_latency.size();
             RDMA_latency.clear();
             return avg;
+        }
+
+        bool check_if_in_current_pages(block_id_t block_id)
+        {
+            if (current_pages_.find(block_id) == current_pages_.end())
+            {
+                return false;
+            }
+            return true;
         }
 
         void update_cache_page(page_t *page_instance, block_id_t block_id)

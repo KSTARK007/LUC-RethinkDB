@@ -216,6 +216,7 @@ namespace alt
         rassert(!page->buf_.has());
         rassert(block_token.has());
         {
+            page_cache->finish_load_with_block_id_++;
             usage_adjuster_t adjuster(page_cache, page);
             page->buf_ = std::move(buf);
             page->block_token_ = std::move(block_token);
@@ -236,6 +237,10 @@ namespace alt
                         page_cache->update_block_info_map(page->block_id_, true, false, false, false);
                     }
                     // std::cout << "Updated Block ID: " << page->block_id_ << " Offset: " << offset << std::endl;
+                }
+                if (!page_cache->check_if_node_in_range(page->block_id_))
+                {
+                    page_cache->is_pages_not_in_cache_++;
                 }
             }
         }
@@ -297,6 +302,7 @@ namespace alt
         page_cache_t *page_cache,
         cache_account_t *account)
     {
+        page_cache->catch_up_with_deferred_load_++;
         page_t *page = deferred_loader->page();
 
         // This is called using spawn_now_dangerously.  The deferred_load_with_block_id
@@ -396,6 +402,7 @@ namespace alt
                                     page_cache_t *page_cache,
                                     cache_account_t *account)
     {
+        page_cache->load_with_block_id_++;
         // This is called using spawn_now_dangerously.  We need to set
         // loader_ before blocking the coroutine.
         instant_page_loader_t loader;
@@ -509,6 +516,7 @@ namespace alt
     void page_t::load_using_block_token(page_t *page, page_cache_t *page_cache,
                                         cache_account_t *account)
     {
+        page_cache->load_using_block_token_++;
         // This is called using spawn_now_dangerously.  We need to set
         // loader_ before blocking the coroutine.
         instant_page_loader_t loader;
@@ -545,6 +553,7 @@ namespace alt
             page->buf_ = std::move(buf);
             page->loader_ = nullptr;
         }
+        // std::cout << "Block ID: " << page->block_id_ << " Loaded using Block Token" << std::endl;
         page->pulse_waiters_or_make_evictable(page_cache);
     }
 
