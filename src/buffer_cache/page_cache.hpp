@@ -410,6 +410,7 @@ namespace alt
         bool should_admit_block(block_id_t block_id);
         void update_perf_map(block_id_t block_id);
         void clear_perf_map();
+        void print_perf_map(size_t file_number);
 
         std::unordered_map<block_id_t, size_t> keys_that_can_be_admitted;
         bool check_if_key_can_be_admitted(block_id_t block_id);

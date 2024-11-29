@@ -136,6 +136,10 @@ void get_best_access_rates(const std::unordered_map<block_id_t, size_t> &perf_ma
     uint64_t best_performance = 0;
     uint64_t best_water_mark_local = 0;
     uint64_t best_water_mark_remote = cache_size;
+    if (rdma_ns_avg == 0)
+    {
+        rdma_ns_avg = 10000;
+    }
 
     for (uint64_t i = 0; i < cache_size; ++i)
     {

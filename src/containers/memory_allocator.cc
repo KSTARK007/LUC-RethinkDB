@@ -255,7 +255,8 @@ bool MemoryPool::check_if_block_duplicate(block_id_t block_id)
             continue;
         }
         size_t block_offset = meta_data_client->getPageMap()->isBlockIDAvailable(block_id);
-        if (block_offset != static_cast<size_t>(-1) || block_offset != static_cast<size_t>(-2))
+        // if (block_offset != static_cast<size_t>(-1) || block_offset != static_cast<size_t>(-2))
+        if (block_offset != static_cast<size_t>(-1))
         {
             return true;
         }
