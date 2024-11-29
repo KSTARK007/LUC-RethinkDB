@@ -336,6 +336,10 @@ namespace alt
             read_ahead_cb_existence_ = drainer_->lock();
         }
 
+        latency_info_.disk = 100000;
+        latency_info_.cache = 1000;
+        latency_info_.RDMA = 5000;
+
         RDMA_hits_.store(0);
         int node_id = get_node_id();
         std::cout << "Node ID: " << node_id << std::endl;
@@ -571,6 +575,11 @@ namespace alt
         }
     }
 
+    void page_cache_t::clear_perf_map()
+    {
+        perf_map.clear();
+    }
+
     void page_cache_t::print_block_info_map(size_t file_number)
     {
         std::stringstream ss;
@@ -642,6 +651,47 @@ namespace alt
         {
             perf_map[block_id] += 1;
         }
+    }
+
+    void page_cache_t::print_keys_that_can_be_admitted(size_t file_number)
+    {
+        std::stringstream ss;
+        ss << "admit_keys" << file_number << ".txt";
+        std::string file_name = ss.str();
+        std::ofstream file;
+        file.open(file_name);
+        file << "Block_id, Accesses" << std::endl;
+        for (auto key : keys_that_can_be_admitted)
+        {
+            file << key.first << " " << key.second << std::endl;
+        }
+        file.close();
+    }
+
+    void page_cache_t::clear_keys_that_can_be_admitted()
+    {
+        keys_that_can_be_admitted.clear();
+    }
+
+    void page_cache_t::update_keys_that_can_be_admitted(block_id_t block_id)
+    {
+        if (keys_that_can_be_admitted.find(block_id) == keys_that_can_be_admitted.end())
+        {
+            keys_that_can_be_admitted[block_id] = 1;
+        }
+        else
+        {
+            keys_that_can_be_admitted[block_id] += 1;
+        }
+    }
+
+    bool page_cache_t::check_if_key_can_be_admitted(block_id_t block_id)
+    {
+        if (keys_that_can_be_admitted.find(block_id) == keys_that_can_be_admitted.end())
+        {
+            return false;
+        }
+        return true;
     }
 
     void page_cache_t::print_current_pages_to_file(size_t file_number)
@@ -905,7 +955,8 @@ namespace alt
                 {
                     auto tmp = new current_page_t(block_id);
                     // if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id))
-                    if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id))
+                    // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id))
+                    if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id) || should_admit_block(block_id))
                     {
                         page_it = current_pages_.insert(
                             page_it, std::make_pair(block_id, tmp));
@@ -930,6 +981,7 @@ namespace alt
         }
         else
         {
+            update_perf_map(block_id);
             page_t *page_instance = page_it->second->page_.get_page_for_read();
             if (page_instance->is_loaded())
             {
@@ -953,6 +1005,13 @@ namespace alt
             operation_count.fetch_add(1);
             if (operation_count.load() % 1000000 == 0)
             {
+                latency_info_.RDMA = avg_rdma_latency();
+                if (clean_up_after_writes)
+                {
+                    // get_and_sort_freq(perf_map, cdf_result);
+                    get_best_access_rates(perf_map, cdf_result, latency_info_.cache, latency_info_.disk, latency_info_.RDMA, evictable_disk_backed_bag, keys_that_can_be_admitted);
+                    clear_perf_map();
+                }
                 // evicter_.remove_out_of_range_pages_periodically();
                 // client->cleanupFrequencyMap();
                 std::cout
@@ -960,12 +1019,12 @@ namespace alt
                     << unevictable_bag << " Evicted bags: " << evicted_bag
                     << " Evictable disk backed bags: " << evictable_disk_backed_bag
                     << " Evictable unbacked bags: " << evictable_unbacked_bag << std::endl;
-                std::cout << "RDMA Latency: " << avg_rdma_latency() << std::endl;
-                std::cout << "load_with_block_id_: " << load_with_block_id_ << " load_using_block_token_: "
-                          << load_using_block_token_ << " finish_load_with_block_id_: "
-                          << finish_load_with_block_id_ << " catch_up_with_deferred_load_: "
-                          << catch_up_with_deferred_load_ << " is_pages_not_in_cache_: "
-                          << is_pages_not_in_cache_ << std::endl;
+                std::cout << "RDMA Latency: " << latency_info_.RDMA << std::endl;
+                // std::cout << "load_with_block_id_: " << load_with_block_id_ << " load_using_block_token_: "
+                //           << load_using_block_token_ << " finish_load_with_block_id_: "
+                //           << finish_load_with_block_id_ << " catch_up_with_deferred_load_: "
+                //           << catch_up_with_deferred_load_ << " is_pages_not_in_cache_: "
+                //           << is_pages_not_in_cache_ << std::endl;
                 evicter_.print_all_bag_sizes();
                 std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
             }
@@ -984,6 +1043,8 @@ namespace alt
                     print_current_pages_to_file(page_map.file_number);
                     print_block_info_map(page_map.file_number);
                     print_leaf_map(page_map.file_number);
+                    print_cdf(cdf_result, page_map.file_number);
+                    print_keys_that_can_be_admitted(page_map.file_number);
                     // page_map.print_map_to_file(page_map.file_number);
                     page_map.file_number++;
                     operation_count.store(0);

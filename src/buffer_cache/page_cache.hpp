@@ -43,6 +43,7 @@
 #include "repli_timestamp.hpp"
 #include "serializer/types.hpp"
 #include "btree/node.hpp"
+#include "containers/calculate_cdf.hpp"
 
 class alt_txn_throttler_t;
 class cache_balancer_t;
@@ -373,6 +374,13 @@ namespace alt
         size_t total_accesses;
     };
 
+    struct latency_info
+    {
+        uint64_t disk;
+        uint64_t cache;
+        uint64_t RDMA;
+    };
+
     class page_cache_t : public home_thread_mixin_t
     {
     public:
@@ -382,6 +390,9 @@ namespace alt
         ~page_cache_t();
 
         int get_node_id();
+
+        CDFType cdf_result;
+        latency_info latency_info_;
 
         bool check_if_node_in_range(u_int64_t block_id);
 
@@ -398,6 +409,13 @@ namespace alt
         std::unordered_map<block_id_t, size_t> perf_map;
         bool should_admit_block(block_id_t block_id);
         void update_perf_map(block_id_t block_id);
+        void clear_perf_map();
+
+        std::unordered_map<block_id_t, size_t> keys_that_can_be_admitted;
+        bool check_if_key_can_be_admitted(block_id_t block_id);
+        void update_keys_that_can_be_admitted(block_id_t block_id);
+        void clear_keys_that_can_be_admitted();
+        void print_keys_that_can_be_admitted(size_t file_number);
 
         size_t misses_ = 0;
         std::atomic<size_t> RDMA_hits_;
