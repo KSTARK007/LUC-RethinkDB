@@ -706,6 +706,10 @@ namespace alt
 
     bool page_cache_t::check_if_key_can_be_admitted(block_id_t block_id)
     {
+        if (!CBA_ENABLED)
+        {
+            return false;
+        }
         if (keys_that_can_be_admitted.find(block_id) == keys_that_can_be_admitted.end())
         {
             return false;
@@ -741,7 +745,7 @@ namespace alt
                 if (page_instance->is_rdma_page())
                 {
                     rdma_bag++;
-                    if (!internal_page)
+                    if (!check_leaf_map_if_leaf(page_instance->block_id()))
                     {
                         continue;
                     }
@@ -981,7 +985,8 @@ namespace alt
                     auto tmp = new current_page_t(block_id);
                     // if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id))
                     // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id))
-                    if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id) || check_if_key_can_be_admitted(block_id))
+                    // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id) || check_if_key_can_be_admitted(block_id))
+                    if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id) || check_if_key_can_be_admitted(block_id))
                     {
                         page_it = current_pages_.insert(
                             page_it, std::make_pair(block_id, tmp));
@@ -1032,7 +1037,10 @@ namespace alt
         {
             if (misses_ > 77700 && !clean_up_after_writes)
             {
-                evicter_.remove_non_leaf_before_read();
+                if (RDMA_ENABLED)
+                {
+                    evicter_.remove_non_leaf_before_read();
+                }
                 clean_up_after_writes = true;
             }
             operation_count.fetch_add(1);
@@ -1058,7 +1066,7 @@ namespace alt
                 //           << finish_load_with_block_id_ << " catch_up_with_deferred_load_: "
                 //           << catch_up_with_deferred_load_ << " is_pages_not_in_cache_: "
                 //           << is_pages_not_in_cache_ << std::endl;
-                evicter_.print_all_bag_sizes();
+                // evicter_.print_all_bag_sizes();
                 std::cout << "RDMA hits: " << RDMA_hits_.load() << " Miss rate: " << misses_ << std::endl;
             }
         }
