@@ -2,11 +2,11 @@
 #ifndef BUFFER_CACHE_PAGE_CACHE_HPP_
 #define BUFFER_CACHE_PAGE_CACHE_HPP_
 
-#define RDMA_ENABLED true
-// #define RDMA_ENABLED false
+// #define RDMA_ENABLED true
+#define RDMA_ENABLED false
 
-// #define CBA_ENABLED true
-#define CBA_ENABLED false
+#define CBA_ENABLED true
+// #define CBA_ENABLED false
 
 #define PRINT_MAPS true
 // #define PRINT_MAPS false
@@ -438,6 +438,8 @@ namespace alt
         uint64_t evictable_unbacked_bag;
         uint64_t internal_pages;
 
+        uint64_t total_admitted = 0;
+
         uint64_t load_with_block_id_ = 0;
         uint64_t load_using_block_token_ = 0;
         uint64_t finish_load_with_block_id_ = 0;
@@ -452,6 +454,7 @@ namespace alt
             evictable_disk_backed_bag = 0;
             evictable_unbacked_bag = 0;
             internal_pages = 0;
+            // total_admitted = 0;
 
             load_with_block_id_ = 0;
             load_using_block_token_ = 0;

@@ -714,6 +714,7 @@ namespace alt
         {
             return false;
         }
+        total_admitted++;
         return true;
     }
 
@@ -1049,8 +1050,17 @@ namespace alt
                 latency_info_.RDMA = avg_rdma_latency();
                 if (clean_up_after_writes)
                 {
+                    if (max_block_size_.value() == 0)
+                    {
+                        throw std::runtime_error("max_block_size_ cannot be zero");
+                    }
+                    uint64_t cache_size_in_blocks = evicter_.memory_limit() / max_block_size_.value();
+                    if (cache_size_in_blocks == 0)
+                    {
+                        throw std::runtime_error("cache_size_in_blocks cannot be zero");
+                    }
                     // get_and_sort_freq(perf_map, cdf_result);
-                    get_best_access_rates(perf_map, cdf_result, latency_info_.cache, latency_info_.disk, latency_info_.RDMA, evictable_disk_backed_bag, keys_that_can_be_admitted);
+                    get_best_access_rates(perf_map, cdf_result, latency_info_.cache, latency_info_.disk, latency_info_.RDMA, cache_size_in_blocks, keys_that_can_be_admitted);
                     clear_perf_map();
                 }
                 // evicter_.remove_out_of_range_pages_periodically();
@@ -1060,7 +1070,7 @@ namespace alt
                     << unevictable_bag << " Evicted bags: " << evicted_bag
                     << " Evictable disk backed bags: " << evictable_disk_backed_bag
                     << " Evictable unbacked bags: " << evictable_unbacked_bag << std::endl;
-                std::cout << "RDMA Latency: " << latency_info_.RDMA << std::endl;
+                std::cout << "RDMA Latency: " << latency_info_.RDMA << "total admitted" << total_admitted << std::endl;
                 // std::cout << "load_with_block_id_: " << load_with_block_id_ << " load_using_block_token_: "
                 //           << load_using_block_token_ << " finish_load_with_block_id_: "
                 //           << finish_load_with_block_id_ << " catch_up_with_deferred_load_: "

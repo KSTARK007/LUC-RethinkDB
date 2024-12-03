@@ -165,7 +165,7 @@ void get_best_access_rates(const std::unordered_map<block_id_t, size_t> &perf_ma
     std::cout << "Best local: " << best_water_mark_local << ", Best remote: " << best_water_mark_remote
               << ", Best performance: " << best_performance << std::endl;
 
-    keys_that_can_be_admitted.clear();
+    // keys_that_can_be_admitted.clear();
     for (uint64_t i = 0; i < best_water_mark_local; ++i)
     {
         keys_that_can_be_admitted[std::get<1>(cdf.first[i])] = std::get<0>(cdf.first[i]);
