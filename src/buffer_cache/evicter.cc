@@ -348,6 +348,7 @@ namespace alt
 
     void evicter_t::remove_non_leaf_before_read()
     {
+        return;
         assert_thread();
         guarantee(initialized_);
         std::cout << "Starting eviction" << std::endl;

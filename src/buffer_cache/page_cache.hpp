@@ -2,8 +2,8 @@
 #ifndef BUFFER_CACHE_PAGE_CACHE_HPP_
 #define BUFFER_CACHE_PAGE_CACHE_HPP_
 
-// #define RDMA_ENABLED true
-#define RDMA_ENABLED false
+#define RDMA_ENABLED true
+// #define RDMA_ENABLED false
 
 #define CBA_ENABLED true
 // #define CBA_ENABLED false
@@ -486,6 +486,15 @@ namespace alt
             return true;
         }
 
+        bool check_if_in_RDMA_current_pages(block_id_t block_id)
+        {
+            if (RDMA_current_pages_.find(block_id) == RDMA_current_pages_.end())
+            {
+                return false;
+            }
+            return true;
+        }
+
         void update_cache_page(page_t *page_instance, block_id_t block_id)
         {
             if (page_instance != nullptr)
@@ -542,7 +551,7 @@ namespace alt
         // More efficient version of `flush_and_destroy_txn` for read transactions.
         void end_read_txn(scoped_ptr_t<page_txn_t> txn);
 
-        current_page_t *page_for_block_id(block_id_t block_id);
+        current_page_t *page_for_block_id(block_id_t block_id, bool isRead);
         current_page_t *page_for_new_block_id(
             block_type_t block_type,
             block_id_t *block_id_out);
@@ -685,6 +694,7 @@ namespace alt
         segmented_vector_t<repli_timestamp_t> recencies_;
 
         std::unordered_map<block_id_t, current_page_t *> current_pages_;
+        std::unordered_map<block_id_t, current_page_t *> RDMA_current_pages_;
 
         free_list_t free_list_;
 

@@ -778,7 +778,7 @@ namespace alt
         file.close();
     }
 
-    current_page_t *page_cache_t::page_for_block_id(block_id_t block_id)
+    current_page_t *page_cache_t::page_for_block_id(block_id_t block_id, bool isRead)
     {
         assert_thread();
         bool should_add_to_local_cache = false;
@@ -793,7 +793,7 @@ namespace alt
                     block_id);
             update_perf_map(block_id);
             // std::cout << "Block " << block_id << " not found in the cache. page_port " << page_map.port_number << std::endl;
-            if (RDMA_ENABLED && PRINT_LATENCY)
+            if (isRead && RDMA_ENABLED && PRINT_LATENCY)
             {
                 std::cout << "RDMA ENABLED and PRINT_LATENCY is true" << std::endl;
                 std::cout << "Block " << block_id << " not found in the cache. page_port " << page_map.port_number << std::endl;
@@ -923,88 +923,96 @@ namespace alt
                 }
             }
 
-            if (RDMA_ENABLED && !PRINT_LATENCY)
+            if (isRead && RDMA_ENABLED && !PRINT_LATENCY)
             {
-                // std::cout << "RDMA ENABLED and PRINT_LATENCY is false" << std::endl;
-                std::pair<RDMAClient *, size_t> tmp;
-                RDMAClient *client = nullptr;
-                size_t offset = 0;
-                auto begin = std::chrono::steady_clock::now();
-                if (page_map.port_number == 6001)
+                page_it = RDMA_current_pages_.find(block_id);
+                if (page_it == RDMA_current_pages_.end())
                 {
-                    tmp = PageAllocator::memory_pool->check_block_exists(block_id);
-                    client = tmp.first;
-                    offset = tmp.second;
-                }
-                if (client != nullptr && block_id != 0 && offset != static_cast<size_t>(-1))
-                {
-                    uint32_t page_size = max_block_size_.value();
-                    // std::cout << "Block " << block_id << " exists on remote server." << client->getIP() << std::endl;
-                    void *block_data = client->getPageFromOffset(offset, page_size);
-
-                    if (block_data != nullptr)
+                    // std::cout << "RDMA ENABLED and PRINT_LATENCY is false" << std::endl;
+                    std::pair<RDMAClient *, size_t> tmp;
+                    RDMAClient *client = nullptr;
+                    size_t offset = 0;
+                    auto begin = std::chrono::steady_clock::now();
+                    if (page_map.port_number == 6001)
                     {
-                        RDMA_hits_.fetch_add(1);
-                        uint32_t ser_bs = page_size + sizeof(ls_buf_data_t); // Total serialized block size
-                        block_size_t block_size = block_size_t::unsafe_make(ser_bs);
+                        tmp = PageAllocator::memory_pool->check_block_exists(block_id);
+                        client = tmp.first;
+                        offset = tmp.second;
+                    }
+                    if (client != nullptr && block_id != 0 && offset != static_cast<size_t>(-1))
+                    {
+                        uint32_t page_size = max_block_size_.value();
+                        // std::cout << "Block " << block_id << " exists on remote server." << client->getIP() << std::endl;
+                        void *block_data = client->getPageFromOffset(offset, page_size);
 
-                        buf_ptr_t buf = buf_ptr_t::alloc_uninitialized(block_size);
-                        std::memcpy(buf.cache_data(), block_data, page_size);
-
-                        buf.fill_padding_zero();
-                        current_page_t *page = new current_page_t(block_id, std::move(buf), this, true);
-                        client->addFrequencyMapEntry(block_id);
-                        bool internal_page = check_if_internal_page(block_data);
-
-                        // if (check_if_node_in_range(block_id) || internal_page)
-                        // if (client->performFrequencyMapLookup(block_id) || internal_page || check_if_key_can_be_admitted(block_id))
-                        if (check_if_node_in_range(block_id) || internal_page || check_if_key_can_be_admitted(block_id))
+                        if (block_data != nullptr)
                         {
-                            page_it = current_pages_.insert(page_it, std::make_pair(block_id, page));
+                            RDMA_hits_.fetch_add(1);
+                            uint32_t ser_bs = page_size + sizeof(ls_buf_data_t); // Total serialized block size
+                            block_size_t block_size = block_size_t::unsafe_make(ser_bs);
 
-                            page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
+                            buf_ptr_t buf = buf_ptr_t::alloc_uninitialized(block_size);
+                            std::memcpy(buf.cache_data(), block_data, page_size);
 
-                            update_cache_page(page_instance, block_id);
+                            buf.fill_padding_zero();
+                            current_page_t *page = new current_page_t(block_id, std::move(buf), this, true);
+                            client->addFrequencyMapEntry(block_id);
+                            bool internal_page = check_if_internal_page(block_data);
 
-                            if (internal_page)
+                            // if (check_if_node_in_range(block_id) || internal_page)
+                            // if (client->performFrequencyMapLookup(block_id) || internal_page || check_if_key_can_be_admitted(block_id))
+                            // if (check_if_node_in_range(block_id) || internal_page || check_if_key_can_be_admitted(block_id))
+                            if (check_if_node_in_range(block_id) || internal_page || check_if_key_can_be_admitted(block_id))
                             {
-                                update_leaf_map(block_id, true);
+                                page_it = RDMA_current_pages_.insert(page_it, std::make_pair(block_id, page));
+
+                                page_t *page_instance = RDMA_current_pages_[block_id]->page_.get_page_for_read();
+
+                                update_cache_page(page_instance, block_id);
+
+                                if (internal_page)
+                                {
+                                    update_leaf_map(block_id, true);
+                                }
                             }
+                            auto end = std::chrono::steady_clock::now();
+                            RDMA_latency.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count());
+                            update_block_info_map(block_id, internal_page, false, false, true);
+                            return page;
                         }
-                        auto end = std::chrono::steady_clock::now();
-                        RDMA_latency.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end - begin).count());
-                        update_block_info_map(block_id, internal_page, false, false, true);
-                        return page;
+                        else
+                        {
+                            std::cerr << "Error: Block data unavailable for block_id " << block_id << std::endl;
+                        }
                     }
                     else
                     {
-                        std::cerr << "Error: Block data unavailable for block_id " << block_id << std::endl;
+                        auto tmp = new current_page_t(block_id);
+                        // if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id))
+                        // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id))
+                        // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id) || check_if_key_can_be_admitted(block_id))
+                        // if (true)
+                        if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id) || check_if_key_can_be_admitted(block_id))
+                        {
+                            // page_it = current_pages_.insert(
+                            //     page_it, std::make_pair(block_id, tmp));
+                            page_it = RDMA_current_pages_.insert(
+                                page_it, std::make_pair(block_id, tmp));
+                            page_t *page_instance = RDMA_current_pages_[block_id]->page_.get_page_for_read();
+                            update_cache_page(page_instance, block_id);
+                        }
+                        // else
+                        // {
+                        // if (check_leaf_map_if_leaf(block_id))
+                        // {
+                        //     std::cout << "Block " << block_id << " is an internal node" << std::endl;
+                        // }
+                        // std::cout << "Block " << block_id << " already exists in the cache." << std::endl;
+                        // }
+                        misses_++;
+                        update_block_info_map(block_id, false, false, true, false);
+                        return tmp;
                     }
-                }
-                else
-                {
-                    auto tmp = new current_page_t(block_id);
-                    // if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id))
-                    // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id))
-                    // if (!check_if_block_duplicate(block_id) || check_leaf_map_if_leaf(block_id) || check_if_key_can_be_admitted(block_id))
-                    if (check_if_node_in_range(block_id) || check_leaf_map_if_leaf(block_id) || check_if_key_can_be_admitted(block_id))
-                    {
-                        page_it = current_pages_.insert(
-                            page_it, std::make_pair(block_id, tmp));
-                        page_t *page_instance = current_pages_[block_id]->page_.get_page_for_read();
-                        update_cache_page(page_instance, block_id);
-                    }
-                    // else
-                    // {
-                    // if (check_leaf_map_if_leaf(block_id))
-                    // {
-                    //     std::cout << "Block " << block_id << " is an internal node" << std::endl;
-                    // }
-                    // std::cout << "Block " << block_id << " already exists in the cache." << std::endl;
-                    // }
-                    misses_++;
-                    update_block_info_map(block_id, false, false, true, false);
-                    return tmp;
                 }
             }
             else
@@ -1012,6 +1020,8 @@ namespace alt
                 // current_page_t *page = new current_page_t(block_id);
                 page_it = current_pages_.insert(
                     page_it, std::make_pair(block_id, new current_page_t(block_id)));
+                // page_it = RDMA_current_pages_.insert(
+                //     page_it, std::make_pair(block_id, new current_page_t(block_id)));
                 page_t *page_instance = page_it->second->page_.get_page_for_read();
                 update_cache_page(page_instance, block_id);
                 misses_++;
@@ -1269,7 +1279,7 @@ namespace alt
             }
             else
             {
-                current_page_ = page_cache_->page_for_block_id(_block_id);
+                current_page_ = page_cache_->page_for_block_id(_block_id, false);
             }
             dirtied_page_ = false;
             touched_page_ = false;
@@ -1308,7 +1318,7 @@ namespace alt
         access_ = access_t::read;
         declared_snapshotted_ = false;
         block_id_ = _block_id;
-        current_page_ = page_cache_->page_for_block_id(_block_id);
+        current_page_ = page_cache_->page_for_block_id(_block_id, true);
         dirtied_page_ = false;
         touched_page_ = false;
 
