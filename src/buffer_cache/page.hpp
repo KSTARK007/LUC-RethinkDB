@@ -92,7 +92,7 @@ namespace alt
         void init_block_token(counted_t<standard_block_token_t> token,
                               page_cache_t *page_cache);
 
-    private:
+    public:
         friend class page_ptr_t;
         friend class deferred_page_loader_t;
         static bool loader_is_loading(page_loader_t *loader);
@@ -165,6 +165,7 @@ namespace alt
         //
         // The logic above is implemented in page_cache_t::correct_eviction_category.
         backindex_bag_index_t eviction_index_;
+        bool is_write = false;
 
         DISABLE_COPYING(page_t);
     };

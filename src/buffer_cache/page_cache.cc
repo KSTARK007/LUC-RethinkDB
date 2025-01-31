@@ -782,6 +782,11 @@ namespace alt
     {
         assert_thread();
         bool should_add_to_local_cache = false;
+        auto write_page_it = write_current_pages_.find(block_id);
+        if (write_page_it != write_current_pages_.end())
+        {
+            return write_page_it->second;
+        }
 
         auto page_it = current_pages_.find(block_id);
         if (page_it == current_pages_.end())
@@ -1169,8 +1174,19 @@ namespace alt
         // where we write uninitialized data to disk.
         memset(buf.cache_data(), 0xCD, max_block_size_.value());
 #endif
+        auto *pages = &current_pages_;
 
-        auto inserted_page = current_pages_.insert(std::make_pair(
+        if (WRITES_ENABLED && block_id > 100000)
+        {
+            consider_evicting_all_write_pages(this);
+
+            auto post_cp = current_pages_.size();
+            auto post_wcp = write_current_pages_.size();
+            // printf("POST SIZE %d %d\n", post_cp, post_wcp);
+            pages = &write_current_pages_;
+        }
+
+        auto inserted_page = pages->insert(std::make_pair(
             block_id, new current_page_t(block_id, std::move(buf), this)));
         guarantee(inserted_page.second);
 
@@ -1178,6 +1194,7 @@ namespace alt
 
         if (page_instance != nullptr)
         {
+            page_instance->is_write = true;
             void *page_buffer = page_instance->get_page_buf(this);
 
             if (page_buffer != nullptr)
@@ -1198,6 +1215,40 @@ namespace alt
         misses_++;
 
         return inserted_page.first->second;
+    }
+    void page_cache_t::erase_write_page_for_block_id(block_id_t block_id)
+    {
+        auto page_it = write_current_pages_.find(block_id);
+        if (page_it == write_current_pages_.end())
+        {
+            return;
+        }
+        current_page_t *page_ptr = page_it->second;
+        if (page_ptr->should_be_evicted())
+        {
+            write_current_pages_.erase(block_id);
+            page_ptr->reset(this);
+            delete page_ptr;
+        }
+    }
+
+    void page_cache_t::consider_evicting_all_write_pages(page_cache_t *page_cache)
+    {
+        // Atomically grab a list of block IDs that currently exist in current_pages.
+        std::vector<block_id_t> current_block_ids;
+        current_block_ids.reserve(page_cache->write_current_pages_.size());
+        for (const auto &current_page : page_cache->write_current_pages_)
+        {
+            current_block_ids.push_back(current_page.first);
+        }
+        // In a separate step, evict current pages that should be evicted.
+        // We do this separately so that we can yield between evictions.
+        size_t i = 0;
+        for (block_id_t id : current_block_ids)
+        {
+            page_cache->erase_write_page_for_block_id(id);
+            ++i;
+        }
     }
 
     cache_account_t page_cache_t::create_cache_account(int priority)

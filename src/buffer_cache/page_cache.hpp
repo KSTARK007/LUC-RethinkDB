@@ -2,6 +2,9 @@
 #ifndef BUFFER_CACHE_PAGE_CACHE_HPP_
 #define BUFFER_CACHE_PAGE_CACHE_HPP_
 
+#define WRITES_ENABLED true
+// #define WRITES_ENABLED false
+
 #define RDMA_ENABLED true
 // #define RDMA_ENABLED false
 
@@ -551,6 +554,9 @@ namespace alt
         // More efficient version of `flush_and_destroy_txn` for read transactions.
         void end_read_txn(scoped_ptr_t<page_txn_t> txn);
 
+        void erase_write_page_for_block_id(block_id_t block_id);
+        static void consider_evicting_all_write_pages(page_cache_t *page_cache);
+
         current_page_t *page_for_block_id(block_id_t block_id, bool isRead);
         current_page_t *page_for_new_block_id(
             block_type_t block_type,
@@ -694,6 +700,7 @@ namespace alt
         segmented_vector_t<repli_timestamp_t> recencies_;
 
         std::unordered_map<block_id_t, current_page_t *> current_pages_;
+        std::unordered_map<block_id_t, current_page_t *> write_current_pages_;
         std::unordered_map<block_id_t, current_page_t *> RDMA_current_pages_;
 
         free_list_t free_list_;

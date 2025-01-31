@@ -79,6 +79,7 @@ namespace alt
 
         // Evicts any evictable pages until under the memory limit
         void evict_if_necessary() THROWS_NOTHING;
+        void evict_writes();
 
         bool initialized_;
         page_cache_t *page_cache_;

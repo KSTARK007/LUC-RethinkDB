@@ -293,7 +293,37 @@ namespace alt
             page->evict_self(page_cache_);
             page_cache_->consider_evicting_current_page(page->block_id());
         }
+        evict_writes();
+
         evict_if_necessary_active_ = false;
+    }
+
+    void evicter_t::evict_writes() THROWS_NOTHING
+    {
+        guarantee(initialized_);
+        page_t *page;
+        auto &ebag = evictable_disk_backed_.bag_;
+        if (ebag.size() > 10)
+        {
+            std::vector<page_t *> iter_pages;
+            for (size_t i = 0; i < ebag.size(); i++)
+            {
+                page_t *iter_page = ebag.access_random(i);
+                iter_pages.emplace_back(iter_page);
+            }
+            for (size_t i = 0; i < ebag.size(); i++)
+            {
+                page_t *iter_page = iter_pages[i];
+                page = iter_page;
+                if (iter_page->is_write)
+                {
+                    evictable_disk_backed_.remove(iter_page, iter_page->hypothetical_memory_usage(page_cache_));
+                    evicted_.add(page, page->hypothetical_memory_usage(page_cache_));
+                    page->evict_self(page_cache_);
+                    page_cache_->erase_write_page_for_block_id(page->block_id());
+                }
+            }
+        }
     }
 
     void evicter_t::remove_out_of_range_pages_periodically()

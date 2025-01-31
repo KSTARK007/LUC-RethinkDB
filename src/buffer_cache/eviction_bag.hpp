@@ -35,7 +35,7 @@ namespace alt
         bool remove_oldish(page_t **page_out, uint64_t access_time_offset,
                            page_cache_t *page_cache);
 
-    private:
+    public:
         backindex_bag_t<page_t *> bag_;
         // The size in memory.
         uint64_t size_;

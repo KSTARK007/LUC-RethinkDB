@@ -192,6 +192,7 @@ namespace alt
                     usage_adjuster_t adjuster(page_cache, page);
                     page->buf_ = buf_ptr_t::alloc_copy(copyee->buf_);
                     page->loader_ = nullptr;
+                    page->is_write = copyee->is_write;
                 }
 
                 page->pulse_waiters_or_make_evictable(page_cache);
