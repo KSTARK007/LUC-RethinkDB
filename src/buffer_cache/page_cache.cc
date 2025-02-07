@@ -1178,7 +1178,7 @@ namespace alt
 
         if (WRITES_ENABLED && block_id > 100000)
         {
-            consider_evicting_all_write_pages(this);
+            // consider_evicting_all_write_pages(this);
 
             auto post_cp = current_pages_.size();
             auto post_wcp = write_current_pages_.size();

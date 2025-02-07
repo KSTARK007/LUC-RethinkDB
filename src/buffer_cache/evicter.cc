@@ -293,7 +293,10 @@ namespace alt
             page->evict_self(page_cache_);
             page_cache_->consider_evicting_current_page(page->block_id());
         }
-        evict_writes();
+        if (WRITES_ENABLED)
+        {
+            evict_writes();
+        }
 
         evict_if_necessary_active_ = false;
     }
