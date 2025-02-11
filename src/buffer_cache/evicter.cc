@@ -306,7 +306,7 @@ namespace alt
         guarantee(initialized_);
         page_t *page;
         auto &ebag = evictable_disk_backed_.bag_;
-        if (ebag.size() > 10)
+        if (ebag.size() > 25)
         {
             std::vector<page_t *> iter_pages;
             for (size_t i = 0; i < ebag.size(); i++)

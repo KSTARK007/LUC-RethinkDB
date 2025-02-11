@@ -5,8 +5,8 @@
 #define WRITES_ENABLED true
 // #define WRITES_ENABLED false
 
-// #define RDMA_ENABLED true
-#define RDMA_ENABLED false
+#define RDMA_ENABLED true
+// #define RDMA_ENABLED false
 
 #define CBA_ENABLED true
 // #define CBA_ENABLED false
