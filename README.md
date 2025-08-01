@@ -1,143 +1,133 @@
-<img style="width:100%;" src="/github-banner.png">
+# LUC-RethinkDB
 
-[RethinkDB](https://www.rethinkdb.com)
-======================================
+## Overview
 
-[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/3038/badge)](https://bestpractices.coreinfrastructure.org/projects/3038)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/6e0fed97691941b1aa3fc5098bfc9385)](https://www.codacy.com/app/RethinkDB/rethinkdb?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=rethinkdb/rethinkdb&amp;utm_campaign=Badge_Grade)
+This is RethinkDB integrated with the Logically Unified Cache (LUC) architecture. RethinkDB is a production NoSQL database that stores schemaless JSON documents and is designed for real-time applications. 
 
-What is RethinkDB?
-------------------
+This LUC integration demonstrates that the unified cache approach can be applied to real-world database systems with minimal changes to the existing codebase. The implementation focuses on **read-path optimizations** using LUC's remote cache access capabilities.
 
-* **Open-source** database for building realtime web applications
-* **NoSQL** database that stores schemaless JSON documents
-* **Distributed** database that is easy to scale
-* **High availability** database with automatic failover and robust fault tolerance
+## LUC Integration Details
 
-RethinkDB is the first open-source scalable database built for
-realtime applications. It exposes a new database access model, in
-which the developer can tell the database to continuously push updated
-query results to applications without polling for changes.  RethinkDB
-allows developers to build scalable realtime apps in a fraction of the
-time with less effort.
+- **Scope**: Read-path optimizations only (write-path not implemented due to time constraints)
+- **Changes**: Modifications contained within the cache layer (~2.4KLOC changes to 282KLOC codebase)
+- **Approach**: Cache allocation made contiguous for RDMA access, no changes to distributed protocols or storage engine
+- **Performance**: 1.3× to 1.9× improvement in read throughput
 
-To learn more, check out [rethinkdb.com](https://rethinkdb.com).
+## Build Instructions
 
-Not sure what types of projects RethinkDB can help you build? Here are a few examples:
+### Prerequisites
 
-* Build a [realtime liveblog](https://rethinkdb.com/blog/rethinkdb-pubnub/) with RethinkDB and PubNub
-* Create a [collaborative photo sharing whiteboard](https://www.youtube.com/watch?v=pdPRp3UxL_s)
-* Build an [IRC bot in Go](https://rethinkdb.com/blog/go-irc-bot/) with RethinkDB changefeeds
-* Look at [cats on Instagram in realtime](https://rethinkdb.com/blog/cats-of-instagram/)
-* Watch [how Platzi uses RethinkDB](https://www.youtube.com/watch?v=Nb_UzRYDB40) to educate
+Install dependencies (Ubuntu/Debian):
+```bash
+sudo apt-get install build-essential protobuf-compiler \
+    python3 python-is-python3 \
+    libprotobuf-dev libcurl4-openssl-dev \
+    libncurses5-dev libjemalloc-dev wget m4 g++ libssl-dev
+```
 
+### Build Process
 
-Quickstart
-----------
+```bash
+# Configure build with fetch capability
+./configure --allow-fetch
 
-For a thirty-second RethinkDB quickstart, check out
-[rethinkdb.com/docs/quickstart](https://www.rethinkdb.com/docs/quickstart).
+# Build with 4 parallel jobs
+make -j4
 
-Or, get started right away with our ten-minute guide in these languages:
+# Install (optional)
+sudo make install
+```
 
-* [**JavaScript**](https://rethinkdb.com/docs/guide/javascript/)
-* [**Python**](https://rethinkdb.com/docs/guide/python/)
-* [**Ruby**](https://rethinkdb.com/docs/guide/ruby/)
-* [**Java**](https://rethinkdb.com/docs/guide/java/)
+### Build Output
 
-Besides our four official drivers, we also have many [third-party drivers](https://rethinkdb.com/docs/install-drivers/) supported by the RethinkDB community. Here are a few of them:
+After successful build, the RethinkDB binary will be available at:
+- Release: `./build/release/rethinkdb`  
+- Debug: `./build/debug_clang/rethinkdb`
 
-* **C#/.NET:** [RethinkDb.Driver](https://github.com/bchavez/RethinkDb.Driver), [rethinkdb-net](https://github.com/mfenniak/rethinkdb-net)
-* **C++:** [librethinkdbxx](https://github.com/AtnNn/librethinkdbxx)
-* **Clojure:** [clj-rethinkdb](https://github.com/apa512/clj-rethinkdb)
-* **Elixir:** [rethinkdb-elixir](https://github.com/rethinkdb/rethinkdb-elixir)
-* **Go:** [GoRethink](https://github.com/dancannon/gorethink)
-* **Haskell:** [haskell-rethinkdb](https://github.com/atnnn/haskell-rethinkdb)
-* **PHP:** [php-rql](https://github.com/danielmewes/php-rql)
-* **Rust:** [reql](https://github.com/rust-rethinkdb/reql)
-* **Scala:** [rethink-scala](https://github.com/kclay/rethink-scala)
+## CloudLab Setup
 
-Looking to explore what else RethinkDB offers or the specifics of
-ReQL? Check out [our RethinkDB docs](https://rethinkdb.com/docs/) and
-[ReQL API](https://rethinkdb.com/api/).
+**⚠️ This system is optimized for CloudLab deployment with shared NAS storage.**
 
-Building
---------
+### Prerequisites
+- CloudLab cluster with **minimum 4 nodes** of type **xl170** (3 servers + 1 client)  
+- RethinkDB binary deployed to all nodes (see deployment options below)
+- IP addresses: 10.10.1.1-3 (servers), 10.10.1.4+ (clients)
 
-First install some dependencies.  For example, on Ubuntu or Debian:
+### Binary Deployment Options
 
-    sudo apt-get install build-essential protobuf-compiler \
-        # python \  # for older distros
-        python3 python-is-python3 \
-        libprotobuf-dev libcurl4-openssl-dev \
-        libncurses5-dev libjemalloc-dev wget m4 g++ libssl-dev
+**Option 1: Use CloudLab Shared Directory**
+```bash
+# Build on one node and place in shared directory
+./configure --allow-fetch && make -j4
+cp ./build/release/rethinkdb /proj/YOUR_PROJECT_NAME/rethinkdb
 
-Generally, you will need
+# Update scripts to use shared path
+RETHINKDB_PATH="/proj/YOUR_PROJECT_NAME/rethinkdb"
+```
 
-* GCC or Clang
-* Protocol Buffers
-* jemalloc
-* Ncurses
-* Python 2 or Python 3
-* libcurl
-* libcrypto (OpenSSL)
-* libssl-dev
+**Option 2: Copy Binary to Each Node**
+```bash
+# After building, copy to all nodes
+for node in 10.10.1.1 10.10.1.2 10.10.1.3 10.10.1.4; do
+  scp ./build/release/rethinkdb $node:/mydata/rethinkdb
+done
 
-Then, to build:
+# Use local path in scripts
+RETHINKDB_PATH="/mydata/rethinkdb"
+```
 
-    ./configure --allow-fetch
-    # or run ./configure --allow-fetch CXX=clang++
+### Cluster Configuration
 
-    make -j4
-    # or run make -j4 DEBUG=1
+1. **Server Setup** (3 nodes: 10.10.1.1, 10.10.1.2, 10.10.1.3)
+   ```bash
+   # Start RethinkDB cluster (update RETHINKDB_PATH based on your deployment option)
+   # Node 1 (primary):
+   $RETHINKDB_PATH --bind all --direct-io --cache-size 115 --io-threads 1
+   
+   # Nodes 2-3 (join cluster):
+   $RETHINKDB_PATH --bind all --direct-io --join 10.10.1.1:29015 \
+     --cache-size 115 --io-threads 1
+   ```
 
-    sudo make install
-    # or run ./build/debug_clang/rethinkdb
+   **Note**: Update the `RETHINKDB_PATH` variable in `Main_run_scripts/run_iteration.sh` to match your chosen deployment path.
 
-See WINDOWS.md and mk/README.md for build instructions for Windows and
-FreeBSD.
+2. **Client Setup** (10.10.1.4+)
+   ```bash
+   # Install Python RethinkDB driver
+   pip install rethinkdb
+   
+   # Run experiments from Main_run_scripts/
+   cd Main_run_scripts/
+   ./main_run.sh
+   ```
 
-Need help?
-----------
+### Experiment Configuration
 
-A great place to start is
-[rethinkdb.com/community](https://rethinkdb.com/community). Here you
-can find out how to ask us questions, reach out to us, or [report an
-issue](https://github.com/rethinkdb/rethinkdb/issues). You'll be able
-to find all the places we frequent online and at which conference or
-meetups you might be able to meet us next.
+**Available Parameters:**
+- **Cache percentages**: 10%, 20%, 30%, 33.33%, 50%, 75%, 100%
+- **Workload types**: hotspot, uniform, zipfian
+- **IO threads**: 1 (limited) or unlimited
+- **Max cache size**: 345MB (configurable in scripts)
 
-If you need help right now, you can also find us [on
-Slack](https://join.slack.com/t/rethinkdb/shared_invite/enQtNzAxOTUzNTk1NzMzLWY5ZTA0OTNmMWJiOWFmOGVhNTUxZjQzODQyZjIzNjgzZjdjZDFjNDg1NDY3MjFhYmNhOTY1MDVkNDgzMWZiZWM),
-[Twitter](https://twitter.com/rethinkdb), or IRC at
-[#rethinkdb](irc://chat.freenode.net/#rethinkdb) on Freenode.
+**Scripts:**
+- `main_run.sh`: Main experiment runner
+- `run_iteration.sh`: Single experiment iteration
+- `basic.py`: RethinkDB client workload generator
+- `analyze_results.py`: Results analysis
 
-Contributing
-------------
+### Usage
 
-RethinkDB was built by a dedicated team, but it wouldn't have been
-possible without the support and contributions of hundreds of people
-from all over the world. We could use your help too! Check out our
-[contributing guidelines](CONTRIBUTING.md) to get started.
+```bash
+cd Main_run_scripts/
 
-Donors
-------
+# Run all experiments (takes several hours)
+./main_run.sh
 
-* [CNCF](https://www.cncf.io/)
-* [Digital Ocean](https://www.digitalocean.com/) provides infrastructure and servers needed for serving mission-critical sites like download.rethinkdb.com or update.rethinkdb.com
-* [Atlassian](https://www.atlassian.com/) provides OSS license to be able to handle internal tickets like vulnerability issues
-* [Netlify](https://www.netlify.com/) OSS license to be able to migrate rethinkdb.com
-* [DNSimple](https://dnsimple.com) provides DNS services for the RethinkDB project
-* [ZeroTier](https://www.zerotier.com) sponsored the development of per-table configurable write aggregation including the ability to set write delay to infinite to create a memory-only table ([PR #6392](https://github.com/rethinkdb/rethinkdb/pull/6392))
+# Run single iteration
+./run_iteration.sh <cache_percentage> <io_thread> <workload_type>
+# Example: ./run_iteration.sh 33.33 1 uniform
+```
 
-Licensing
----------
+## Configuration
 
-RethinkDB is licensed by the Linux Foundation under the open-source
-Apache 2.0 license. Portions of the software are licensed by Google
-and others and used with permission or subject to their respective
-license agreements.
-
-Where's the changelog?
-----------------------
-We keep [a list of changes and feature explanations here](NOTES.md).
+The LUC-specific configurations are handled internally through the modified cache layer. Cache size and workload parameters are controlled through the experiment scripts.
